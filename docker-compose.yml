@@ -4,8 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        - VITE_BACKEND_URL=${VITE_BACKEND_URL:-http://localhost:3000}
+        - VITE_BACKEND_URL=${VITE_BACKEND_URL:-http://72.60.96.242:3000}
     container_name: video_studio_frontend
     restart: always
     ports:
-      - "${FRONTEND_PORT:-8080}:80"
+      - "3001:80"
