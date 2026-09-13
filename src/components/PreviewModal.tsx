@@ -84,14 +84,20 @@ export function PreviewModal({ onClose }: { onClose: () => void }) {
             const currentClipTime =
               clip.trimIn + (currentPlayhead - clip.startTime);
 
-            if (Math.abs(video.currentTime - currentClipTime) > 0.1) {
-              video.currentTime = currentClipTime;
-            }
-
-            if (currentIsPlaying && video.paused) {
-              video.play().catch(() => {});
-            } else if (!currentIsPlaying && !video.paused) {
-              video.pause();
+            if (currentIsPlaying) {
+              if (video.paused) {
+                video.currentTime = currentClipTime;
+                video.play().catch(() => {});
+              } else if (Math.abs(video.currentTime - currentClipTime) > 0.35) {
+                video.currentTime = currentClipTime;
+              }
+            } else {
+              if (!video.paused) {
+                video.pause();
+              }
+              if (Math.abs(video.currentTime - currentClipTime) > 0.05) {
+                video.currentTime = currentClipTime;
+              }
             }
 
             if (clip.asset.type === "video" && video.readyState >= 2) {

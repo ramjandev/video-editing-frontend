@@ -1,0 +1,23 @@
+name: Deploy Frontend to VPS
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  deploy:
+    name: Auto Deploy Frontend to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH into VPS and deploy Frontend
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            echo "🚀 Auto-deploying Frontend..."
+            cd ~/video-editing-frontend || cd /var/www/video-editing-frontend || cd ~/video-editing/video-editing-frontend
+            git pull
+            docker compose up --build -d

@@ -1,3 +1,5 @@
+export type UserRole = "USER" | "ADMIN" | "SUPER_ADMIN";
+
 export interface User {
   _id: string;
   id?: string;
@@ -5,7 +7,21 @@ export interface User {
   lastName: string;
   email: string;
   phone?: string;
+  role?: UserRole;
   createdAt?: string;
+}
+
+export interface AdminUser extends User {
+  projectCount: number;
+  assetCount: number;
+}
+
+export interface PlatformStats {
+  totalUsers: number;
+  totalProjects: number;
+  totalAssets: number;
+  totalVersions: number;
+  roleCounts: Record<UserRole, number>;
 }
 
 export interface AuthResponse {
@@ -46,6 +62,8 @@ export interface Clip {
   endTime: number;
   trimIn: number;
   trimOut: number;
+  volume?: number;
+  muted?: boolean;
   effects?: Effect[];
   keyframes?: Keyframe[];
 }

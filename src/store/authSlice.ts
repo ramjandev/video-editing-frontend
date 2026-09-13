@@ -22,7 +22,7 @@ try {
 const initialState: AuthState = {
   user: parsedUser,
   token: initialToken,
-  isAuthenticated: !!initialToken,
+  isAuthenticated: !!initialToken && parsedUser !== null,
   isLoading: false,
   error: null,
   isAuthModalOpen: false,

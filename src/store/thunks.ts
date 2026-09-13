@@ -1,6 +1,7 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { api, API_BASE } from '@/lib/api';
-import { setAssets, setProject, setExportProgressDetails } from './editorSlice';
+import { setAssets, setProject, setExportProgressDetails, setExporting, setExportUrl } from './editorSlice';
+import { addToast } from './uiSlice';
 import type { RootState } from './index';
 
 export { API_BASE };
@@ -22,12 +23,17 @@ export const uploadAsset = createAsyncThunk(
   async (file: File, { dispatch }) => {
     const formData = new FormData();
     formData.append('video', file);
-
-    const response = await api.post('/assets', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    dispatch(loadAssets());
-    return response.data;
+    try {
+      const response = await api.post('/assets', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      dispatch(loadAssets());
+      dispatch(addToast({ type: 'success', message: `"${file.name}" uploaded successfully!` }));
+      return response.data;
+    } catch (error: any) {
+      dispatch(addToast({ type: 'error', message: `Upload failed: ${error?.response?.data?.message || error.message || 'Unknown error'}` }));
+      throw error;
+    }
   }
 );
 
@@ -118,34 +124,48 @@ export const exportVideo = createAsyncThunk(
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let buffer = '';
+
+      const processLine = (line: string) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(trimmed.slice(6));
+            if (data.type === 'progress') {
+              dispatch(setExportProgressDetails({
+                percent: data.percent,
+                eta: data.etaSeconds !== undefined ? data.etaSeconds : null,
+                status: data.status || 'rendering'
+              }));
+            } else if (data.type === 'complete') {
+              dispatch(setExportUrl(data.url));
+              dispatch(addToast({ type: 'success', message: '🎬 Export complete! Click download to save.' }));
+            } else if (data.type === 'error') {
+              console.error('Export error:', data.message);
+              dispatch(setExporting(false));
+              dispatch(addToast({ type: 'error', message: `Export failed: ${data.message}` }));
+            }
+          } catch (e) {
+            console.warn('Failed to parse SSE JSON line:', trimmed, e);
+          }
+        }
+      };
 
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
-        
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.type === 'progress') {
-                dispatch(setExportProgressDetails({
-                  percent: data.percent,
-                  eta: data.etaSeconds !== undefined ? data.etaSeconds : null,
-                  status: data.status || 'rendering'
-                }));
-              } else if (data.type === 'complete') {
-                dispatch({ type: 'editor/setExportUrl', payload: data.url });
-              } else if (data.type === 'error') {
-                console.error("Export error:", data.message);
-                dispatch({ type: 'editor/setExporting', payload: false });
-              }
-            } catch (e) {
-              // ignore parse errors for partial chunks
-            }
+        if (done) {
+          if (buffer.trim()) {
+            processLine(buffer);
           }
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // keep trailing incomplete line in buffer
+
+        for (const line of lines) {
+          processLine(line);
         }
       }
     } catch (error) {

@@ -13,6 +13,9 @@ export interface EditorState {
   isPlaying: boolean;
   exportEta: number | null;
   exportStatus: string;
+  // Undo/redo history
+  past: SceneGraph[];
+  future: SceneGraph[];
 }
 
 const initialState: EditorState = {
@@ -27,6 +30,8 @@ const initialState: EditorState = {
   isPlaying: false,
   exportEta: null,
   exportStatus: 'preparing',
+  past: [],
+  future: [],
 };
 // Utility function to recalculate project duration based on clips in the scene graph
 const recalculateDuration = (state: EditorState) => {
@@ -45,14 +50,51 @@ const recalculateDuration = (state: EditorState) => {
   }
 };
 
+// Snapshot current sceneGraph into past before mutation (max 50 steps)
+const snapshotHistory = (state: EditorState) => {
+  if (!state.sceneGraph) return;
+  state.past = [...state.past, JSON.parse(JSON.stringify(state.sceneGraph))].slice(-50);
+  state.future = [];
+};
+
 const editorSlice = createSlice({
   name: "editor",
   initialState,
   reducers: {
+    undo: (state) => {
+      if (state.past.length === 0) return;
+      const previous = state.past[state.past.length - 1];
+      state.past = state.past.slice(0, -1);
+      if (state.sceneGraph) state.future = [JSON.parse(JSON.stringify(state.sceneGraph)), ...state.future].slice(0, 50);
+      state.sceneGraph = previous;
+      recalculateDuration(state);
+    },
+    redo: (state) => {
+      if (state.future.length === 0) return;
+      const next = state.future[0];
+      state.future = state.future.slice(1);
+      if (state.sceneGraph) state.past = [...state.past, JSON.parse(JSON.stringify(state.sceneGraph))].slice(-50);
+      state.sceneGraph = next;
+      recalculateDuration(state);
+    },
     setPlayhead: (state, action: PayloadAction<number>) => {
       state.playhead = action.payload;
     },
     togglePlay: (state) => {
+      if (!state.isPlaying && state.sceneGraph) {
+        let maxClipEnd = 0;
+        for (const track of state.sceneGraph.tracks) {
+          for (const clip of track.clips) {
+            if (clip.endTime > maxClipEnd) {
+              maxClipEnd = clip.endTime;
+            }
+          }
+        }
+        const effectiveDuration = maxClipEnd > 0 ? maxClipEnd : (state.sceneGraph.duration || 180);
+        if (state.playhead >= effectiveDuration - 0.2 || state.playhead >= (state.sceneGraph.duration || 180) - 0.2) {
+          state.playhead = 0;
+        }
+      }
       state.isPlaying = !state.isPlaying;
     },
     setAssets: (state, action: PayloadAction<Asset[]>) => {
@@ -73,63 +115,73 @@ const editorSlice = createSlice({
       state,
       action: PayloadAction<{
         asset: Asset;
-        trackId: string;
-        startTime: number;
+        trackId?: string;
+        startTime?: number;
       }>,
     ) => {
       if (!state.sceneGraph) return;
+      snapshotHistory(state);
 
-      const { asset, trackId, startTime } = action.payload;
+      const { asset } = action.payload;
+      const startTime = action.payload.startTime ?? 0;
+      const isAudio = asset.type === "audio";
+      const targetType = isAudio ? "audio" : "video";
 
+      // 1. Find target track matching targetType
+      let track = state.sceneGraph.tracks.find((t) =>
+        action.payload.trackId ? t.id === action.payload.trackId && t.type === targetType : t.type === targetType
+      );
+
+      // Fallback: search for any track matching targetType if requested trackId didn't match type
+      if (!track) {
+        track = state.sceneGraph.tracks.find((t) => t.type === targetType);
+      }
+
+      // If no track of targetType exists, create a new track of targetType
+      if (!track) {
+        const newTrackId = `track_${targetType}_${Date.now()}`;
+        track = {
+          id: newTrackId,
+          type: targetType,
+          clips: [],
+        };
+        state.sceneGraph.tracks.push(track);
+      }
+
+      const clipDuration = asset.duration || 5;
       const newClip: Clip = {
-        id: `clip_${Date.now()}`,
+        id: `clip_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         assetId: asset._id,
         asset: asset,
         startTime: startTime,
-        endTime: startTime + asset.duration,
+        endTime: startTime + clipDuration,
         trimIn: 0,
-        trimOut: asset.duration,
+        trimOut: clipDuration,
       };
 
-      const trackIndex = state.sceneGraph.tracks.findIndex(
-        (t) => t.id === trackId,
+      // Collision detection for insertion
+      let finalStartTime = startTime;
+      let finalEndTime = newClip.endTime;
+
+      const hasOverlap = track.clips.some(
+        (c) =>
+          (finalStartTime >= c.startTime && finalStartTime < c.endTime) ||
+          (finalEndTime > c.startTime && finalEndTime <= c.endTime) ||
+          (finalStartTime <= c.startTime && finalEndTime >= c.endTime),
       );
-      if (trackIndex === -1) {
-        state.sceneGraph.tracks.push({
-          id: trackId,
-          type: asset.type === "audio" ? "audio" : "video",
-          clips: [newClip],
-        });
-      } else {
-        const track = state.sceneGraph.tracks[trackIndex];
 
-        // Collision detection for insertion
-        let finalStartTime = startTime;
-        let finalEndTime = newClip.endTime;
-
-        // Simple strategy: push to the end if there's any overlap at all
-        const hasOverlap = track.clips.some(
-          (c) =>
-            (finalStartTime >= c.startTime && finalStartTime < c.endTime) ||
-            (finalEndTime > c.startTime && finalEndTime <= c.endTime) ||
-            (finalStartTime <= c.startTime && finalEndTime >= c.endTime),
+      if (hasOverlap) {
+        const maxEndTime = track.clips.reduce(
+          (max, c) => Math.max(max, c.endTime),
+          0,
         );
-
-        if (hasOverlap) {
-          // Find the maximum end time on this track
-          const maxEndTime = track.clips.reduce(
-            (max, c) => Math.max(max, c.endTime),
-            0,
-          );
-          finalStartTime = maxEndTime;
-          finalEndTime = finalStartTime + asset.duration;
-          newClip.startTime = finalStartTime;
-          newClip.endTime = finalEndTime;
-        }
-
-        track.clips.push(newClip);
+        finalStartTime = maxEndTime;
+        finalEndTime = finalStartTime + clipDuration;
+        newClip.startTime = finalStartTime;
+        newClip.endTime = finalEndTime;
       }
 
+      track.clips.push(newClip);
       recalculateDuration(state);
     },
     updateClip: (
@@ -155,50 +207,75 @@ const editorSlice = createSlice({
     splitClip: (
       state,
       action: PayloadAction<{
-        trackId: string;
-        clipId: string;
-        splitAtTime: number;
+        trackId?: string;
+        clipId?: string;
+        splitAtTime?: number;
       }>,
     ) => {
       if (!state.sceneGraph) return;
-      const { trackId, clipId, splitAtTime } = action.payload;
 
-      const track = state.sceneGraph.tracks.find((t) => t.id === trackId);
-      if (!track) return;
+      const splitTime = action.payload.splitAtTime ?? state.playhead;
+      const targetClipId = action.payload.clipId || state.selectedClipId;
 
-      const clipIndex = track.clips.findIndex((c) => c.id === clipId);
-      if (clipIndex === -1) return;
+      const performSplitOnClip = (track: any, clipIndex: number) => {
+        const originalClip = track.clips[clipIndex];
+        if (splitTime <= originalClip.startTime || splitTime >= originalClip.endTime) {
+          return false;
+        }
 
-      const originalClip = track.clips[clipIndex];
+        const splitOffset = splitTime - originalClip.startTime;
 
-      // Don't split if time is outside clip bounds
-      if (
-        splitAtTime <= originalClip.startTime ||
-        splitAtTime >= originalClip.endTime
-      )
-        return;
+        const newClip: Clip = {
+          ...originalClip,
+          id: `clip_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          startTime: splitTime,
+          endTime: originalClip.endTime,
+          trimIn: (originalClip.trimIn || 0) + splitOffset,
+          trimOut: originalClip.trimOut,
+        };
 
-      // Calculate the offset into the asset
-      const splitOffset = splitAtTime - originalClip.startTime;
+        originalClip.endTime = splitTime;
+        originalClip.trimOut = (originalClip.trimIn || 0) + splitOffset;
 
-      // Create new clip B
-      const newClip: Clip = {
-        ...originalClip,
-        id: `clip_${Date.now()}`,
-        startTime: splitAtTime,
-        trimIn: originalClip.trimIn + splitOffset,
+        track.clips.splice(clipIndex + 1, 0, newClip);
+        return true;
       };
 
-      // Update original clip (becomes Clip A)
-      originalClip.endTime = splitAtTime;
-      originalClip.trimOut = originalClip.trimIn + splitOffset;
+      let splitOccurred = false;
 
-      // Insert new clip right after original clip
-      track.clips.splice(clipIndex + 1, 0, newClip);
-      recalculateDuration(state);
+      if (targetClipId) {
+        for (const track of state.sceneGraph.tracks) {
+          if (action.payload.trackId && track.id !== action.payload.trackId) continue;
+          const clipIndex = track.clips.findIndex((c) => c.id === targetClipId);
+          if (clipIndex !== -1) {
+            if (!splitOccurred) snapshotHistory(state);
+            splitOccurred = performSplitOnClip(track, clipIndex);
+            if (splitOccurred) break;
+          }
+        }
+      }
+
+      if (!splitOccurred) {
+        for (const track of state.sceneGraph.tracks) {
+          const clipIndex = track.clips.findIndex(
+            (c) => splitTime > c.startTime && splitTime < c.endTime,
+          );
+          if (clipIndex !== -1) {
+            if (!splitOccurred) snapshotHistory(state);
+            if (performSplitOnClip(track, clipIndex)) {
+              splitOccurred = true;
+            }
+          }
+        }
+      }
+
+      if (splitOccurred) {
+        recalculateDuration(state);
+      }
     },
     deleteClip: (state, action: PayloadAction<string>) => {
       if (!state.sceneGraph) return;
+      snapshotHistory(state);
       const clipId = action.payload;
       for (const track of state.sceneGraph.tracks) {
         const index = track.clips.findIndex((c) => c.id === clipId);
@@ -210,6 +287,121 @@ const editorSlice = createSlice({
           break;
         }
       }
+      recalculateDuration(state);
+    },
+    separateAudio: (
+      state,
+      action: PayloadAction<{
+        clipId?: string;
+        regionStart?: number;
+        regionEnd?: number;
+        muteOriginal?: boolean;
+      }>,
+    ) => {
+      if (!state.sceneGraph) return;
+
+      const targetClipId = action.payload.clipId || state.selectedClipId;
+      let foundClip: Clip | null = null;
+
+      if (targetClipId) {
+        for (const track of state.sceneGraph.tracks) {
+          const c = track.clips.find((clip) => clip.id === targetClipId);
+          if (c) {
+            foundClip = c;
+            break;
+          }
+        }
+      }
+
+      if (!foundClip) {
+        const time = state.playhead;
+        for (const track of state.sceneGraph.tracks) {
+          if (track.type === "video") {
+            const c = track.clips.find((clip) => time >= clip.startTime && time <= clip.endTime);
+            if (c) {
+              foundClip = c;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!foundClip) return;
+      snapshotHistory(state);
+
+      const isRegion =
+        action.payload.regionStart !== undefined &&
+        action.payload.regionEnd !== undefined &&
+        action.payload.regionStart < action.payload.regionEnd;
+
+      let startTime = foundClip.startTime;
+      let endTime = foundClip.endTime;
+      let trimIn = foundClip.trimIn;
+      let trimOut = foundClip.trimOut;
+
+      if (isRegion) {
+        const rStart = Math.max(foundClip.startTime, action.payload.regionStart!);
+        const rEnd = Math.min(foundClip.endTime, action.payload.regionEnd!);
+        if (rStart < rEnd) {
+          const offsetStart = rStart - foundClip.startTime;
+          const offsetEnd = rEnd - foundClip.startTime;
+          startTime = rStart;
+          endTime = rEnd;
+          trimIn = (foundClip.trimIn || 0) + offsetStart;
+          trimOut = (foundClip.trimIn || 0) + offsetEnd;
+        }
+      }
+
+      let audioTrack = state.sceneGraph.tracks.find((t) => t.type === "audio");
+      if (!audioTrack) {
+        const audioTrackId = `track_audio_${Date.now()}`;
+        audioTrack = {
+          id: audioTrackId,
+          type: "audio",
+          clips: [],
+        };
+        state.sceneGraph.tracks.push(audioTrack);
+      }
+
+      const hasOverlap = audioTrack.clips.some(
+        (c) =>
+          (startTime >= c.startTime && startTime < c.endTime) ||
+          (endTime > c.startTime && endTime <= c.endTime) ||
+          (startTime <= c.startTime && endTime >= c.endTime),
+      );
+
+      if (hasOverlap) {
+        const newAudioTrackId = `track_audio_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+        audioTrack = {
+          id: newAudioTrackId,
+          type: "audio",
+          clips: [],
+        };
+        state.sceneGraph.tracks.push(audioTrack);
+      }
+
+      const extractedAudioClip: Clip = {
+        id: `clip_audio_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        assetId: foundClip.assetId,
+        asset: {
+          ...foundClip.asset,
+          type: "audio",
+          public_id: foundClip.asset?.public_id
+            ? `${foundClip.asset.public_id} (Sound)`
+            : "Separated Sound",
+        },
+        startTime,
+        endTime,
+        trimIn,
+        trimOut,
+      };
+
+      // Mute the original video clip so sound is not duplicated
+      foundClip.muted = true;
+      foundClip.volume = 0;
+
+      audioTrack.clips.push(extractedAudioClip);
+      state.selectedClipId = extractedAudioClip.id;
       recalculateDuration(state);
     },
     moveClip: (
@@ -241,14 +433,19 @@ const editorSlice = createSlice({
         let proposedStart = Math.max(0, newStartTime);
         let proposedEnd = proposedStart + duration;
 
-        // Determine destination track
+        // Determine destination track with strict type validation
         let destTrack = sourceTrack;
         if (newTrackId && newTrackId !== sourceTrack.id) {
           const foundDestTrack = state.sceneGraph.tracks.find(
             (t) => t.id === newTrackId,
           );
           if (foundDestTrack) {
-            destTrack = foundDestTrack;
+            const isAudioClip = targetClip.asset?.type === "audio";
+            const isDestAudio = foundDestTrack.type === "audio";
+            // Strictly enforce track type match
+            if (isAudioClip === isDestAudio) {
+              destTrack = foundDestTrack;
+            }
           }
         }
 
@@ -257,7 +454,6 @@ const editorSlice = createSlice({
         for (const otherClip of destTrack.clips) {
           if (otherClip.id === clipId) continue;
 
-          // Check if proposed time intersects with otherClip
           if (
             (proposedStart >= otherClip.startTime &&
               proposedStart < otherClip.endTime) ||
@@ -272,7 +468,6 @@ const editorSlice = createSlice({
         }
 
         if (!hasCollision) {
-          // If track changed, move it
           if (destTrack.id !== sourceTrack.id) {
             const clipIndex = sourceTrack.clips.findIndex(
               (c: Clip) => c.id === clipId,
@@ -284,7 +479,6 @@ const editorSlice = createSlice({
               destTrack.clips.push(clipToMove);
             }
           } else {
-            // Same track movement
             targetClip.startTime = proposedStart;
             targetClip.endTime = proposedEnd;
           }
@@ -317,11 +511,14 @@ const editorSlice = createSlice({
 });
 
 export const {
+  undo,
+  redo,
   setProject,
   setAssets,
   addAssetToTimeline,
   updateClip,
   splitClip,
+  separateAudio,
   deleteClip,
   moveClip,
   setPlayhead,
