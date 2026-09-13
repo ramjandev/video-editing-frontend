@@ -18,6 +18,13 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             echo "🚀 Auto-deploying Frontend..."
-            cd ~/video-editing-frontend || cd /var/www/video-editing-frontend || cd ~/video-editing/video-editing-frontend
-            git pull
+            TARGET_DIR="$HOME/video-editing-frontend"
+            if [ ! -d "$TARGET_DIR" ]; then
+              echo "📁 Directory $TARGET_DIR does not exist. Cloning repository..."
+              git clone https://github.com/${{ github.repository }}.git "$TARGET_DIR" || mkdir -p "$TARGET_DIR"
+            fi
+            cd "$TARGET_DIR"
+            if [ -d ".git" ]; then
+              git pull
+            fi
             docker compose up --build -d
