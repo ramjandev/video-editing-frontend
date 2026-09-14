@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { triggerAutosave, deleteAsset, uploadAsset } from "@/store/thunks";
-import { addAssetToTimeline } from "@/store/editorSlice";
+import { addAssetToTimeline, addOptimisticAsset } from "@/store/editorSlice";
 import { getMediaUrl } from "@/lib/api";
 import type { Asset } from "@/types";
 import {
@@ -38,7 +38,6 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
     if (onRailTabChange) onRailTabChange(tab);
   };
 
-  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeFilterTab, setActiveFilterTab] = useState<"All" | "Image" | "Video" | "Audio">("All");
   const [searchQuery, setSearchQuery] = useState("");
@@ -53,26 +52,63 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    setIsUploading(true);
-    try {
-      for (const file of files) {
-        const uploaded = await dispatch(uploadAsset(file)).unwrap();
-        if (uploaded?.type) {
-          const cap = uploaded.type.charAt(0).toUpperCase() + uploaded.type.slice(1);
-          if (["Image", "Video", "Audio"].includes(cap)) {
-            setActiveFilterTab(cap as any);
-          } else {
-            setActiveFilterTab("All");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    for (const file of files) {
+      const localBlobUrl = URL.createObjectURL(file);
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+
+      let type: "video" | "image" | "audio" = "video";
+      if (file.type.startsWith("image/") || ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'].includes(ext)) {
+        type = "image";
+      } else if (file.type.startsWith("audio/") || ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(ext)) {
+        type = "audio";
+      }
+
+      let duration = 10;
+      if (type === "image") {
+        duration = 5;
+      } else {
+        try {
+          const media = document.createElement(type === "audio" ? "audio" : "video");
+          media.preload = "metadata";
+          media.src = localBlobUrl;
+          await new Promise((res) => {
+            media.onloadedmetadata = () => res(null);
+            media.onerror = () => res(null);
+            setTimeout(res, 1000);
+          });
+          if (media.duration && !isNaN(media.duration) && media.duration > 0) {
+            duration = media.duration;
           }
-        } else {
-          setActiveFilterTab("All");
+        } catch {
+          duration = 10;
         }
       }
-    } catch (error) {
-      console.error("Upload failed", error);
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const optimisticAsset: Asset = {
+        _id: tempId,
+        original_url: localBlobUrl,
+        preview_url: localBlobUrl,
+        duration: duration,
+        type: type,
+        public_id: file.name,
+      };
+
+      // 1. Instantly display asset in library (0ms UI latency!)
+      dispatch(addOptimisticAsset(optimisticAsset));
+
+      // 2. Auto-switch filter tab so user sees asset immediately
+      const cap = type.charAt(0).toUpperCase() + type.slice(1);
+      if (["Image", "Video", "Audio"].includes(cap)) {
+        setActiveFilterTab(cap as any);
+      } else {
+        setActiveFilterTab("All");
+      }
+
+      // 3. Background async upload to live server
+      dispatch(uploadAsset({ file, tempId }));
     }
   };
 
@@ -249,11 +285,10 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
                   </h2>
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="bg-sky-500 hover:bg-sky-400 text-white font-medium py-1.5 px-4 rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+                    className="bg-sky-500 hover:bg-sky-400 text-white font-medium py-1.5 px-4 rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
                   >
                     <UploadIcon className="w-3.5 h-3.5" />
-                    <span>{isUploading ? "Uploading..." : "Upload"}</span>
+                    <span>Upload</span>
                   </button>
                   <input
                     type="file"

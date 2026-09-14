@@ -100,6 +100,31 @@ const editorSlice = createSlice({
     setAssets: (state, action: PayloadAction<Asset[]>) => {
       state.assets = action.payload;
     },
+    addOptimisticAsset: (state, action: PayloadAction<Asset>) => {
+      state.assets.unshift(action.payload);
+    },
+    replaceOptimisticAsset: (
+      state,
+      action: PayloadAction<{ tempId: string; realAsset: Asset }>,
+    ) => {
+      const idx = state.assets.findIndex((a) => a._id === action.payload.tempId);
+      if (idx !== -1) {
+        state.assets[idx] = action.payload.realAsset;
+      } else {
+        const exists = state.assets.some((a) => a._id === action.payload.realAsset._id);
+        if (!exists) state.assets.unshift(action.payload.realAsset);
+      }
+      if (state.sceneGraph) {
+        for (const track of state.sceneGraph.tracks) {
+          for (const clip of track.clips) {
+            if (clip.assetId === action.payload.tempId || clip.asset._id === action.payload.tempId) {
+              clip.assetId = action.payload.realAsset._id;
+              clip.asset = action.payload.realAsset;
+            }
+          }
+        }
+      }
+    },
     setProject: (
       state,
       action: PayloadAction<{ projectId: string; sceneGraph: SceneGraph }>,
@@ -603,6 +628,8 @@ export const {
   redo,
   setProject,
   setAssets,
+  addOptimisticAsset,
+  replaceOptimisticAsset,
   addAssetToTimeline,
   updateClip,
   duplicateClip,

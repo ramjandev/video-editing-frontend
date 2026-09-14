@@ -1,6 +1,6 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { api, API_BASE } from '@/lib/api';
-import { setAssets, setProject, setExportProgressDetails, setExporting, setExportUrl } from './editorSlice';
+import { setAssets, replaceOptimisticAsset, setProject, setExportProgressDetails, setExporting, setExportUrl } from './editorSlice';
 import { addToast } from './uiSlice';
 import type { RootState } from './index';
 
@@ -48,14 +48,21 @@ const getVideoDuration = (file: File): Promise<number> => {
 
 export const uploadAsset = createAsyncThunk(
   'editor/uploadAsset',
-  async (file: File, { dispatch }) => {
+  async (payload: File | { file: File; tempId?: string }, { dispatch }) => {
+    const file = payload instanceof File ? payload : payload.file;
+    const tempId = payload instanceof File ? undefined : payload.tempId;
+
     const duration = await getVideoDuration(file);
     const formData = new FormData();
     formData.append('video', file);
     formData.append('duration', duration.toString());
     try {
       const response = await api.post('/assets', formData);
-      await dispatch(loadAssets());
+      if (tempId && response.data) {
+        dispatch(replaceOptimisticAsset({ tempId, realAsset: response.data }));
+      } else {
+        await dispatch(loadAssets());
+      }
       dispatch(addToast({ type: 'success', message: `"${file.name}" uploaded successfully!` }));
       return response.data;
     } catch (error: any) {
