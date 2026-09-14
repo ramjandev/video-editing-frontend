@@ -18,11 +18,41 @@ export const loadAssets = createAsyncThunk(
   }
 );
 
+const getVideoDuration = (file: File): Promise<number> => {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('video/') && !file.type.startsWith('audio/')) {
+      return resolve(file.type.startsWith('image/') ? 5 : 10);
+    }
+    try {
+      const url = URL.createObjectURL(file);
+      const media = document.createElement(file.type.startsWith('audio/') ? 'audio' : 'video');
+      media.preload = 'metadata';
+      media.onloadedmetadata = () => {
+        URL.revokeObjectURL(url);
+        resolve(media.duration || 10);
+      };
+      media.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(10);
+      };
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        resolve(10);
+      }, 2000);
+      media.src = url;
+    } catch {
+      resolve(10);
+    }
+  });
+};
+
 export const uploadAsset = createAsyncThunk(
   'editor/uploadAsset',
   async (file: File, { dispatch }) => {
+    const duration = await getVideoDuration(file);
     const formData = new FormData();
     formData.append('video', file);
+    formData.append('duration', duration.toString());
     try {
       const response = await api.post('/assets', formData);
       await dispatch(loadAssets());
