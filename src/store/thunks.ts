@@ -24,9 +24,7 @@ export const uploadAsset = createAsyncThunk(
     const formData = new FormData();
     formData.append('video', file);
     try {
-      const response = await api.post('/assets', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const response = await api.post('/assets', formData);
       dispatch(loadAssets());
       dispatch(addToast({ type: 'success', message: `"${file.name}" uploaded successfully!` }));
       return response.data;
