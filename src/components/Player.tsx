@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store";
 import type { Clip } from "@/types";
+import { getMediaUrl } from "@/lib/api";
 import { LayoutGrid } from "lucide-react";
 
 interface PlayerProps {
@@ -29,7 +30,7 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
         ) {
           const isAudio = clip.asset.type === "audio";
           const media = document.createElement(isAudio ? "audio" : "video");
-          const mediaUrl = clip.asset.preview_url || clip.asset.original_url;
+          const mediaUrl = getMediaUrl(clip.asset.preview_url || clip.asset.original_url);
           media.src = mediaUrl;
           if (mediaUrl.startsWith("http")) {
             media.crossOrigin = "anonymous";
@@ -150,7 +151,7 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
             console.error("Failed drawing video frame", e);
           }
         } else if (clip.asset.type === "image") {
-          const url = clip.asset.preview_url || clip.asset.original_url;
+          const url = getMediaUrl(clip.asset.preview_url || clip.asset.original_url);
           if (url) {
             let img = imageCache.current[url];
             if (!img) {

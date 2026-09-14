@@ -2,6 +2,7 @@ import React, { useState, useRef } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { triggerAutosave, deleteAsset, uploadAsset } from "@/store/thunks";
 import { addAssetToTimeline } from "@/store/editorSlice";
+import { getMediaUrl } from "@/lib/api";
 import type { Asset } from "@/types";
 import {
   Upload as UploadIcon,
@@ -322,7 +323,7 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
                       {asset.type === "video" ? (
                         <>
                           <video
-                            src={asset.preview_url || asset.original_url}
+                            src={getMediaUrl(asset.preview_url || asset.original_url)}
                             className="w-full h-full object-cover"
                           />
                           <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
@@ -342,7 +343,7 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
                         </div>
                       ) : asset.type === "image" ? (
                         <img
-                          src={asset.preview_url || asset.original_url}
+                          src={getMediaUrl(asset.preview_url || asset.original_url)}
                           alt="preview"
                           className="w-full h-full object-cover"
                         />

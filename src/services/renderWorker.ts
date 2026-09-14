@@ -8,7 +8,7 @@ import {
   setClusterStats,
   addWorkerLog,
 } from '@/store/workerSlice';
-import { WS_URL } from '@/lib/api';
+import { WS_URL, getMediaUrl } from '@/lib/api';
 
 class RenderWorkerService {
   private socket: Socket | null = null;
@@ -167,7 +167,7 @@ class RenderWorkerService {
             const v = document.createElement('video');
             v.crossOrigin = 'anonymous';
             v.preload = 'auto';
-            v.src = clip.asset.original_url || clip.asset.preview_url;
+            v.src = getMediaUrl(clip.asset.original_url || clip.asset.preview_url);
             loadPromises.push(
               new Promise((res) => {
                 v.onloadedmetadata = () => res();

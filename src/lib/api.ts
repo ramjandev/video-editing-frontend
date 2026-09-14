@@ -32,4 +32,22 @@ api.interceptors.response.use(
   }
 );
 
+export function getMediaUrl(url?: string): string {
+  if (!url) return '';
+  if (url.startsWith('/')) {
+    return `${BACKEND_URL}${url}`;
+  }
+  if (
+    url.includes('localhost:3000') ||
+    url.includes('72.60.96.242') ||
+    url.includes('backend:3000')
+  ) {
+    const parts = url.split('/uploads/');
+    if (parts.length > 1) {
+      return `${BACKEND_URL}/uploads/${parts[1]}`;
+    }
+  }
+  return url;
+}
+
 export default api;
