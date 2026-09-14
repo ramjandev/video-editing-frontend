@@ -204,6 +204,58 @@ const editorSlice = createSlice({
         }
       }
     },
+    duplicateClip: (state, action: PayloadAction<string>) => {
+      if (!state.sceneGraph) return;
+      const clipId = action.payload;
+
+      let targetClip: Clip | null = null;
+      let targetTrack: any = null;
+
+      for (const track of state.sceneGraph.tracks) {
+        const c = track.clips.find((clip) => clip.id === clipId);
+        if (c) {
+          targetClip = c;
+          targetTrack = track;
+          break;
+        }
+      }
+
+      if (!targetClip || !targetTrack) return;
+      snapshotHistory(state);
+
+      const duration = targetClip.endTime - targetClip.startTime;
+      let newStartTime = targetClip.endTime;
+      let newEndTime = newStartTime + duration;
+
+      const hasOverlap = (start: number, end: number) => {
+        return targetTrack.clips.some(
+          (c: Clip) =>
+            (start >= c.startTime && start < c.endTime) ||
+            (end > c.startTime && end <= c.endTime) ||
+            (start <= c.startTime && end >= c.endTime)
+        );
+      };
+
+      if (hasOverlap(newStartTime, newEndTime)) {
+        const maxTrackEnd = targetTrack.clips.reduce(
+          (max: number, c: Clip) => Math.max(max, c.endTime),
+          0
+        );
+        newStartTime = maxTrackEnd;
+        newEndTime = newStartTime + duration;
+      }
+
+      const duplicatedClip: Clip = {
+        ...JSON.parse(JSON.stringify(targetClip)),
+        id: `clip_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        startTime: newStartTime,
+        endTime: newEndTime,
+      };
+
+      targetTrack.clips.push(duplicatedClip);
+      state.selectedClipId = duplicatedClip.id;
+      recalculateDuration(state);
+    },
     splitClip: (
       state,
       action: PayloadAction<{
@@ -517,6 +569,7 @@ export const {
   setAssets,
   addAssetToTimeline,
   updateClip,
+  duplicateClip,
   splitClip,
   separateAudio,
   deleteClip,

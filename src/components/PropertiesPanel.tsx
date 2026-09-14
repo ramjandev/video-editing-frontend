@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { updateClip, setSelectedClip, deleteClip, separateAudio } from "@/store/editorSlice";
+import { updateClip, setSelectedClip, deleteClip, separateAudio, duplicateClip } from "@/store/editorSlice";
 import { triggerAutosave } from "@/store/thunks";
 import { SelectLayoutModal } from "./SelectLayoutModal";
 import { AnimationModal } from "./AnimationModal";
@@ -60,6 +60,12 @@ export function PropertiesPanel() {
       }
     }
   }
+
+  useEffect(() => {
+    if (selectedClip) {
+      setVolume(selectedClip.volume !== undefined ? selectedClip.volume : 100);
+    }
+  }, [selectedClip?.id, selectedClip?.volume]);
 
   if (!selectedClip) {
     return (
@@ -128,8 +134,23 @@ export function PropertiesPanel() {
       ? "Slider"
       : selectedClip.asset?.public_id || "Video.mp4";
 
+  const handleVolumeChange = (newVolume: number) => {
+    setVolume(newVolume);
+    if (selectedClip && selectedTrackId) {
+      dispatch(
+        updateClip({
+          trackId: selectedTrackId,
+          clipId: selectedClip.id,
+          updates: { volume: newVolume },
+        })
+      );
+      dispatch(triggerAutosave());
+    }
+  };
+
   const handleDuplicate = () => {
-    // Duplicate clip logic
+    if (!selectedClip) return;
+    dispatch(duplicateClip(selectedClip.id));
     dispatch(triggerAutosave());
   };
 
@@ -372,7 +393,7 @@ export function PropertiesPanel() {
                     min={0}
                     max={100}
                     value={volume}
-                    onChange={(e) => setVolume(parseInt(e.target.value))}
+                    onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
                     className="w-full accent-sky-500 cursor-pointer"
                   />
                 </div>
@@ -452,7 +473,7 @@ export function PropertiesPanel() {
                 min={0}
                 max={100}
                 value={volume}
-                onChange={(e) => setVolume(parseInt(e.target.value))}
+                onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
                 className="w-full accent-sky-500 cursor-pointer"
               />
             </div>
