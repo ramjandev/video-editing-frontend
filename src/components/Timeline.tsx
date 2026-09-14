@@ -362,35 +362,7 @@ export function Timeline() {
             <span>Separate Sound</span>
           </button>
 
-          <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
-
-          {/* Add Track Controls */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => {
-                dispatch(addTrack({ type: "video" }));
-                dispatch(triggerAutosave());
-              }}
-              title="Add New Video Track"
-              className="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-sky-100 dark:hover:bg-sky-950/60 hover:border-sky-300 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors border border-transparent shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5 text-sky-500" />
-              <span>+ Video Track</span>
-            </button>
-            <button
-              onClick={() => {
-                dispatch(addTrack({ type: "audio" }));
-                dispatch(triggerAutosave());
-              }}
-              title="Add New Audio Track"
-              className="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-emerald-100 dark:hover:bg-emerald-950/60 hover:border-emerald-300 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors border border-transparent shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5 text-emerald-500" />
-              <span>+ Audio Track</span>
-            </button>
-          </div>
-
-          <div className="text-xs font-mono font-medium text-slate-600 dark:text-slate-300 ml-2">
+          <div className="text-xs font-mono font-medium text-slate-600 dark:text-slate-300">
             {formatTimecode(playhead)}{" "}
             <span className="text-slate-400 mx-1">|</span>{" "}
             {formatTimecode(duration || 180)}
@@ -418,8 +390,34 @@ export function Timeline() {
             <Home className="w-4 h-4" />
           </button>
 
-          {/* Page Badges Row */}
+          {/* Track Creation & Page Badges Row */}
           <div className="flex items-center gap-2 px-3 py-1">
+            <button
+              onClick={() => {
+                dispatch(addTrack({ type: "video" }));
+                dispatch(triggerAutosave());
+              }}
+              title="Add New Video Track"
+              className="px-3 py-1 rounded-lg bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Add Video Track</span>
+            </button>
+
+            <button
+              onClick={() => {
+                dispatch(addTrack({ type: "audio" }));
+                dispatch(triggerAutosave());
+              }}
+              title="Add New Audio Track"
+              className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Add Audio Track</span>
+            </button>
+
+            <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
+
             <span className="px-3 py-1 rounded-lg bg-purple-600 text-white text-xs font-semibold shadow-xs">
               Page 1
             </span>
