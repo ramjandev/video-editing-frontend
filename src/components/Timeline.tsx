@@ -16,7 +16,6 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { triggerAutosave } from "@/store/thunks";
 import type { Clip } from "@/types";
 import {
-  X as CloseIcon,
   Home,
   Pause,
   Play,
@@ -415,31 +414,6 @@ export function Timeline() {
               <Plus className="w-3.5 h-3.5" />
               <span>+ Add Audio Track</span>
             </button>
-
-            <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
-
-            <span className="px-3 py-1 rounded-lg bg-purple-600 text-white text-xs font-semibold shadow-xs">
-              Page 1
-            </span>
-
-            <span className="px-3 py-1 rounded-lg bg-orange-600 text-white text-xs font-semibold shadow-xs">
-              Page 2
-            </span>
-
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 text-xs font-medium">
-              <span>Layout</span>
-              <button className="hover:text-amber-950 dark:hover:text-white cursor-pointer">
-                <CloseIcon className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <span className="px-3 py-1 rounded-lg bg-emerald-600 text-white text-xs font-semibold shadow-xs">
-              Page 3
-            </span>
-
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 text-xs font-medium">
-              <span>Layout</span>
-            </div>
           </div>
         </div>
 
@@ -617,31 +591,6 @@ export function Timeline() {
               </div>
             </div>
           ))}
-
-          {/* Bottom Add Track Controls */}
-          <div className="sticky left-0 flex items-center gap-2 p-3 z-30">
-            <button
-              onClick={() => {
-                dispatch(addTrack({ type: "video" }));
-                dispatch(triggerAutosave());
-              }}
-              className="px-3 py-1.5 rounded-xl border border-dashed border-sky-300 dark:border-sky-800 bg-sky-50/60 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-600 dark:text-sky-400 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5 text-sky-500" />
-              <span>Add Video Track</span>
-            </button>
-
-            <button
-              onClick={() => {
-                dispatch(addTrack({ type: "audio" }));
-                dispatch(triggerAutosave());
-              }}
-              className="px-3 py-1.5 rounded-xl border border-dashed border-emerald-300 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Add Audio Track</span>
-            </button>
-          </div>
         </div>
 
         <PlayheadIndicator onPlayheadMouseDown={handlePlayheadMouseDown} />
