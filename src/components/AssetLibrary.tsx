@@ -39,7 +39,7 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeFilterTab, setActiveFilterTab] = useState<"All" | "Image" | "Video" | "Audio">("All");
+  const [activeFilterTab, setActiveFilterTab] = useState<"All" | "Image" | "Video" | "Audio" | "Exports">("All");
   const [searchQuery, setSearchQuery] = useState("");
 
   const handleRailUploadClick = () => {
@@ -126,7 +126,11 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
 
   const filteredAssets = assets.filter((asset) => {
     const matchesFilter =
-      activeFilterTab === "All" || asset.type.toLowerCase() === activeFilterTab.toLowerCase();
+      activeFilterTab === "All"
+        ? true
+        : activeFilterTab === "Exports"
+        ? asset.type.toLowerCase() === "export"
+        : asset.type.toLowerCase() === activeFilterTab.toLowerCase();
     const matchesSearch =
       !searchQuery ||
       (asset.public_id || asset.original_url).toLowerCase().includes(searchQuery.toLowerCase());
@@ -313,12 +317,12 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
                 </div>
 
                 {/* Filter Tabs */}
-                <div className="flex items-center gap-4 text-xs font-medium border-b border-slate-100 dark:border-slate-800 pb-1">
-                  {(["All", "Image", "Video", "Audio"] as const).map((tab) => (
+                <div className="flex items-center gap-4 text-xs font-medium border-b border-slate-100 dark:border-slate-800 pb-1 overflow-x-auto">
+                  {(["All", "Image", "Video", "Audio", "Exports"] as const).map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setActiveFilterTab(tab)}
-                      className={`pb-1 transition-colors relative cursor-pointer ${
+                      className={`pb-1 transition-colors relative cursor-pointer shrink-0 ${
                         activeFilterTab === tab
                           ? "text-sky-500 font-semibold"
                           : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
@@ -355,7 +359,7 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
                     </button>
 
                     <div className="w-full h-20 bg-slate-100 dark:bg-slate-800 flex items-center justify-center relative overflow-hidden shrink-0">
-                      {asset.type === "video" ? (
+                      {asset.type === "video" || asset.type === "export" ? (
                         <>
                           <video
                             src={getMediaUrl(asset.preview_url || asset.original_url)}

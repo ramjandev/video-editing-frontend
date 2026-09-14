@@ -36,7 +36,7 @@ export interface Asset {
   preview_url: string;
   thumbnail_sprite_url?: string;
   duration: number;
-  type: "video" | "audio" | "image" | "text";
+  type: "video" | "audio" | "image" | "text" | "export";
   content?: string;
   public_id: string;
 }
