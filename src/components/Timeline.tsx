@@ -41,40 +41,40 @@ function PlayheadIndicator({
 
   return (
     <div
-      className="absolute top-0 bottom-0 w-[1.5px] bg-slate-700 dark:bg-slate-300 z-20 pointer-events-none transition-none ml-12"
+      className="absolute top-0 bottom-0 w-[1.5px] bg-sky-500 z-50 pointer-events-none transition-none ml-12"
       style={{ left: `${playhead * pixelsPerSecond}px` }}
     >
       <svg
-        width="16"
+        width="18"
         height="24"
-        viewBox="0 0 16 24"
+        viewBox="0 0 18 24"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className="absolute top-[40px] -ml-[7px] cursor-ew-resize pointer-events-auto drop-shadow-md z-20"
+        className="absolute top-[40px] -ml-[8.25px] cursor-ew-resize pointer-events-auto drop-shadow-md z-50"
         onMouseDown={onPlayheadMouseDown}
       >
         <path
-          d="M 2 2 H 14 V 12 L 8 22 L 2 12 Z"
-          fill="#ffffff"
-          stroke="#475569"
+          d="M 2 2 H 16 V 12 L 9 22 L 2 12 Z"
+          fill="#0284c7"
+          stroke="#ffffff"
           strokeWidth="1.5"
           strokeLinejoin="round"
         />
         <line
-          x1="6"
-          y1="5"
-          x2="6"
-          y2="10"
-          stroke="#94a3b8"
+          x1="7"
+          y1="6"
+          x2="7"
+          y2="11"
+          stroke="#ffffff"
           strokeWidth="1.5"
           strokeLinecap="round"
         />
         <line
-          x1="10"
-          y1="5"
-          x2="10"
-          y2="10"
-          stroke="#94a3b8"
+          x1="11"
+          y1="6"
+          x2="11"
+          y2="11"
+          stroke="#ffffff"
           strokeWidth="1.5"
           strokeLinecap="round"
         />
