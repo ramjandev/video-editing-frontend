@@ -42,6 +42,12 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
   const [activeFilterTab, setActiveFilterTab] = useState<"All" | "Image" | "Video" | "Audio">("All");
   const [searchQuery, setSearchQuery] = useState("");
 
+  const handleRailUploadClick = () => {
+    setInternalRailTab("upload");
+    if (onRailTabChange) onRailTabChange("upload");
+    fileInputRef.current?.click();
+  };
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -49,7 +55,17 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
     setIsUploading(true);
     try {
       for (const file of files) {
-        await dispatch(uploadAsset(file)).unwrap();
+        const uploaded = await dispatch(uploadAsset(file)).unwrap();
+        if (uploaded?.type) {
+          const cap = uploaded.type.charAt(0).toUpperCase() + uploaded.type.slice(1);
+          if (["Image", "Video", "Audio"].includes(cap)) {
+            setActiveFilterTab(cap as any);
+          } else {
+            setActiveFilterTab("All");
+          }
+        } else {
+          setActiveFilterTab("All");
+        }
       }
     } catch (error) {
       console.error("Upload failed", error);
@@ -160,7 +176,7 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
         {/* 1. Left Vertical Icon Rail */}
         <div className="w-16 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800/80 flex flex-col items-center py-4 gap-6 shrink-0 z-20">
           <button
-            onClick={() => handleRailClick("upload")}
+            onClick={handleRailUploadClick}
             className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
               activeRailTab === "upload"
                 ? "text-sky-500 font-semibold"
