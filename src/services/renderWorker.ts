@@ -159,6 +159,8 @@ class RenderWorkerService {
 
       // Preload video elements for this segment
       const videoElements: Map<string, HTMLVideoElement> = new Map();
+      const loadPromises: Promise<void>[] = [];
+
       for (const track of payload.segmentSceneGraph.tracks || []) {
         for (const clip of track.clips || []) {
           if (clip.asset?.type === 'video' || clip.asset?.type === 'audio') {
@@ -166,10 +168,20 @@ class RenderWorkerService {
             v.crossOrigin = 'anonymous';
             v.preload = 'auto';
             v.src = clip.asset.original_url || clip.asset.preview_url;
+            loadPromises.push(
+              new Promise((res) => {
+                v.onloadedmetadata = () => res();
+                v.onerror = () => res();
+                setTimeout(res, 3000);
+              })
+            );
+            v.load();
             videoElements.set(clip.assetId, v);
           }
         }
       }
+
+      await Promise.all(loadPromises);
 
       const totalFrames = Math.ceil(payload.duration * fps);
       const frameIntervalSec = 1 / fps;
