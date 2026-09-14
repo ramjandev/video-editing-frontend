@@ -341,6 +341,24 @@ const editorSlice = createSlice({
       }
       recalculateDuration(state);
     },
+    deleteTrack: (state, action: PayloadAction<string>) => {
+      if (!state.sceneGraph) return;
+      const trackId = action.payload;
+
+      const trackIndex = state.sceneGraph.tracks.findIndex((t) => t.id === trackId);
+      if (trackIndex !== -1) {
+        snapshotHistory(state);
+        const trackToDelete = state.sceneGraph.tracks[trackIndex];
+        if (state.selectedClipId) {
+          const hasSelectedClip = trackToDelete.clips.some((c) => c.id === state.selectedClipId);
+          if (hasSelectedClip) {
+            state.selectedClipId = null;
+          }
+        }
+        state.sceneGraph.tracks.splice(trackIndex, 1);
+        recalculateDuration(state);
+      }
+    },
     separateAudio: (
       state,
       action: PayloadAction<{
@@ -573,6 +591,7 @@ export const {
   splitClip,
   separateAudio,
   deleteClip,
+  deleteTrack,
   moveClip,
   setPlayhead,
   setSelectedClip,

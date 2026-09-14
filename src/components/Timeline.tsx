@@ -1,6 +1,7 @@
 import {
   addAssetToTimeline,
   deleteClip,
+  deleteTrack,
   moveClip,
   redo,
   setPlayhead,
@@ -23,6 +24,7 @@ import {
   Video,
   Volume2,
   Music,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -499,13 +501,27 @@ export function Timeline() {
               className="flex h-14 border-b border-slate-200 dark:border-slate-800/80 relative hover:bg-slate-50/50 dark:hover:bg-slate-850/50"
             >
               {/* Track Header Icon (Sticky Left - High Z-Index to prevent clipping) */}
-              <div className="w-12 bg-white dark:bg-slate-900 flex items-center justify-center border-r border-slate-200 dark:border-slate-800 shrink-0 text-slate-500 dark:text-slate-400 z-30 sticky left-0 shadow-xs h-full">
+              <div className="w-12 bg-white dark:bg-slate-900 flex items-center justify-center border-r border-slate-200 dark:border-slate-800 shrink-0 text-slate-500 dark:text-slate-400 z-30 sticky left-0 shadow-xs h-full group relative">
                 {track.type === "audio" ? (
                   <Volume2 className="w-4 h-4 text-emerald-500 shrink-0" />
                 ) : track.type === "text" ? (
                   <Type className="w-4 h-4 text-purple-500 shrink-0" />
                 ) : (
                   <Video className="w-4 h-4 text-sky-500 shrink-0" />
+                )}
+
+                {sceneGraph.tracks.length > 2 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dispatch(deleteTrack(track.id));
+                      dispatch(triggerAutosave());
+                    }}
+                    title="Delete Track"
+                    className="absolute inset-0 bg-white/90 dark:bg-slate-900/90 text-red-500 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-40"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-500" />
+                  </button>
                 )}
               </div>
 
