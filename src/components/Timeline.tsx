@@ -400,7 +400,7 @@ export function Timeline() {
               className="px-3 py-1 rounded-lg bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>+ Add Video Track</span>
+              <span>Add Video Track</span>
             </button>
 
             <button
@@ -412,7 +412,7 @@ export function Timeline() {
               className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>+ Add Audio Track</span>
+              <span>Add Audio Track</span>
             </button>
           </div>
         </div>
