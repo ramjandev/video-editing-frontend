@@ -43,12 +43,14 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
   const [searchQuery, setSearchQuery] = useState("");
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setIsUploading(true);
     try {
-      await dispatch(uploadAsset(file)).unwrap();
+      for (const file of files) {
+        await dispatch(uploadAsset(file)).unwrap();
+      }
     } catch (error) {
       console.error("Upload failed", error);
     } finally {
@@ -238,10 +240,11 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
                   </button>
                   <input
                     type="file"
-                    accept="video/*,image/*,audio/*"
+                    accept="video/*,image/*,audio/*,.mp4,.webm,.mov,.avi,.mkv,.png,.jpg,.jpeg,.webp,.gif,.mp3,.wav,.ogg,.m4a,.aac"
                     className="hidden"
                     ref={fileInputRef}
                     onChange={handleUpload}
+                    multiple
                   />
                 </div>
 
