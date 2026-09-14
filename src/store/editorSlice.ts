@@ -1,4 +1,4 @@
-import type { Asset, Clip, SceneGraph } from "@/types";
+import type { Asset, Clip, SceneGraph, Track } from "@/types";
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 export interface EditorState {
@@ -359,6 +359,24 @@ const editorSlice = createSlice({
         recalculateDuration(state);
       }
     },
+    addTrack: (
+      state,
+      action: PayloadAction<{ type?: "video" | "audio" | "text" } | undefined>
+    ) => {
+      if (!state.sceneGraph) return;
+      snapshotHistory(state);
+
+      const trackType = action?.payload?.type || "video";
+      const newTrackId = `track_${trackType}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+
+      const newTrack: Track = {
+        id: newTrackId,
+        type: trackType,
+        clips: [],
+      };
+
+      state.sceneGraph.tracks.push(newTrack);
+    },
     separateAudio: (
       state,
       action: PayloadAction<{
@@ -592,6 +610,7 @@ export const {
   separateAudio,
   deleteClip,
   deleteTrack,
+  addTrack,
   moveClip,
   setPlayhead,
   setSelectedClip,
