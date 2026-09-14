@@ -138,6 +138,40 @@ export const exportVideo = createAsyncThunk(
     const { sceneGraph } = state.editor;
     if (!sceneGraph) return;
 
+    // Clone sceneGraph and resolve any blob: URLs to server URLs before sending
+    const updatedSceneGraph = JSON.parse(JSON.stringify(sceneGraph));
+    let hasBlobUrl = false;
+    let pendingFile = '';
+
+    for (const track of updatedSceneGraph.tracks || []) {
+      for (const clip of track.clips || []) {
+        const url = clip.asset?.original_url || clip.asset?.preview_url || '';
+        if (url.startsWith('blob:')) {
+          const matchedAsset = state.editor.assets.find(
+            (a) => a._id === clip.assetId || a.public_id === clip.asset?.public_id
+          );
+          if (matchedAsset && !matchedAsset.original_url.startsWith('blob:')) {
+            clip.asset.original_url = matchedAsset.original_url;
+            clip.asset.preview_url = matchedAsset.preview_url;
+          } else {
+            hasBlobUrl = true;
+            pendingFile = clip.asset?.public_id || 'media file';
+          }
+        }
+      }
+    }
+
+    if (hasBlobUrl) {
+      dispatch({ type: 'editor/setExporting', payload: false });
+      dispatch(
+        addToast({
+          type: 'warning',
+          message: `"${pendingFile}" is still uploading in the background. Please wait a moment for upload to complete before exporting.`,
+        })
+      );
+      throw new Error(`Media "${pendingFile}" is still uploading. Please wait a moment.`);
+    }
+
     dispatch({ type: 'editor/setExporting', payload: true });
 
     const token = localStorage.getItem('token');
@@ -152,7 +186,7 @@ export const exportVideo = createAsyncThunk(
       const response = await fetch(`${API_BASE}/export`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ sceneGraph })
+        body: JSON.stringify({ sceneGraph: updatedSceneGraph }),
       });
 
       if (!response.body) throw new Error('No response stream received');
