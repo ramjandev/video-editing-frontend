@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
 import { setExporting } from '@/store/editorSlice';
 import { X, Download, CheckCircle2, Zap } from 'lucide-react';
-import { BACKEND_URL } from '@/lib/api';
+import { BACKEND_URL, API_BASE } from '@/lib/api';
 
 export function ExportModal() {
   const dispatch = useAppDispatch();
@@ -16,35 +16,24 @@ export function ExportModal() {
     resolvedDownloadUrl = `${BACKEND_URL}${resolvedDownloadUrl}`;
   }
 
-  const triggerDownload = async (url: string) => {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = `video_export_${Date.now()}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-    } catch (err) {
-      console.warn('Blob download failed, falling back to direct window open:', err);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `video_export_${Date.now()}.mp4`;
-      a.target = '_blank';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
+  const triggerDownload = (url: string) => {
+    if (!url) return;
+    const filename = url.split('/uploads/').pop()?.split('?')[0] || `export_${Date.now()}.mp4`;
+    const downloadEndpoint = `${API_BASE}/download/${filename}`;
+
+    const a = document.createElement('a');
+    a.href = downloadEndpoint;
+    a.download = filename;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   // Automatically trigger file download when export reaches completion
   useEffect(() => {
-    if (exportUrl && resolvedDownloadUrl) {
-      triggerDownload(resolvedDownloadUrl);
+    if (exportUrl) {
+      triggerDownload(exportUrl);
     }
   }, [exportUrl]);
 
@@ -52,8 +41,8 @@ export function ExportModal() {
 
   const handleDownload = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!resolvedDownloadUrl) return;
-    triggerDownload(resolvedDownloadUrl);
+    if (!exportUrl) return;
+    triggerDownload(exportUrl);
   };
 
   return (
