@@ -242,7 +242,7 @@ export function AdminPanel() {
                           <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                             <td className="px-4 py-3 font-medium text-slate-900 dark:text-white flex items-center gap-2">
                               <div className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-600/30 text-purple-700 dark:text-purple-300 flex items-center justify-center font-bold text-[10px]">
-                                {u.firstName?.[0] || u.email?.[0]?.toUpperCase()}
+                                {u.firstName && typeof u.firstName === 'string' && u.firstName.trim() ? u.firstName.trim().charAt(0).toUpperCase() : u.email && typeof u.email === 'string' && u.email.trim() ? u.email.trim().charAt(0).toUpperCase() : "U"}
                               </div>
                               <span>
                                 {u.firstName} {u.lastName}

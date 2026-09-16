@@ -100,6 +100,17 @@ function App() {
   const handleZoomIn = () => setZoomPercent((prev) => Math.min(200, prev + 10));
   const handleZoomOut = () => setZoomPercent((prev) => Math.max(20, prev - 10));
 
+  const getUserInitial = (u?: { firstName?: string; email?: string } | null) => {
+    if (!u) return "U";
+    if (typeof u.firstName === "string" && u.firstName.trim().length > 0) {
+      return u.firstName.trim().charAt(0).toUpperCase();
+    }
+    if (typeof u.email === "string" && u.email.trim().length > 0) {
+      return u.email.trim().charAt(0).toUpperCase();
+    }
+    return "U";
+  };
+
   const canUndo = past.length > 0;
   const canRedo = future.length > 0;
   const isAdminOrSuperAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
@@ -251,7 +262,7 @@ function App() {
                     onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                     className="w-8 h-8 rounded-full bg-sky-500 text-white flex items-center justify-center text-xs font-bold cursor-pointer"
                   >
-                    {user.firstName?.[0] ?? user.email?.[0]?.toUpperCase() ?? "U"}
+                    {getUserInitial(user)}
                   </button>
                   {isUserMenuOpen && (
                     <div

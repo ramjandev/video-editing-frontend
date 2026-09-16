@@ -16,9 +16,21 @@ export function ExportModal() {
     resolvedDownloadUrl = `${BACKEND_URL}${resolvedDownloadUrl}`;
   }
 
+  const getFilenameFromUrl = (url?: string | null): string => {
+    if (!url || typeof url !== 'string') return `export_${Date.now()}.mp4`;
+    const cleanUrl = url.split('?')[0] || '';
+    const parts = cleanUrl.split('/uploads/');
+    const lastPart = parts[parts.length - 1];
+    if (lastPart && lastPart.trim().length > 0) {
+      return lastPart;
+    }
+    const slashParts = cleanUrl.split('/');
+    return slashParts[slashParts.length - 1] || `export_${Date.now()}.mp4`;
+  };
+
   const triggerDownload = (url: string) => {
     if (!url) return;
-    const filename = url.split('/uploads/').pop()?.split('?')[0] || `export_${Date.now()}.mp4`;
+    const filename = getFilenameFromUrl(url);
     const downloadEndpoint = `${API_BASE}/download/${filename}`;
 
     const a = document.createElement('a');
