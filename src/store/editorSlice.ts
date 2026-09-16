@@ -620,6 +620,21 @@ const editorSlice = createSlice({
     setExportUrl: (state, action: PayloadAction<string | null>) => {
       state.exportUrl = action.payload;
     },
+    resetEditor: (state) => {
+      state.activeProjectId = null;
+      state.sceneGraph = null;
+      state.assets = [];
+      state.playhead = 0;
+      state.selectedClipId = null;
+      state.isExporting = false;
+      state.exportProgress = 0;
+      state.exportUrl = null;
+      state.isPlaying = false;
+      state.exportEta = null;
+      state.exportStatus = 'preparing';
+      state.past = [];
+      state.future = [];
+    },
   },
 });
 
@@ -646,6 +661,7 @@ export const {
   setExportProgressDetails,
   setExportUrl,
   togglePlay,
+  resetEditor,
 } = editorSlice.actions;
 
 export default editorSlice.reducer;

@@ -12,7 +12,7 @@ import { ProjectManager } from "./components/ProjectManager";
 import { AdminPanel } from "./components/AdminPanel";
 import { useAppDispatch, useAppSelector } from "./store/hooks";
 import { loadAssets, createProject, exportVideo, triggerAutosave } from "./store/thunks";
-import { undo, redo } from "./store/editorSlice";
+import { undo, redo, resetEditor } from "./store/editorSlice";
 import { openAuthModal, logout, fetchCurrentUser } from "./store/authSlice";
 import { toggleProjectManager, toggleAdminPanel, addToast } from "./store/uiSlice";
 import { renderWorker } from "./services/renderWorker";
@@ -67,15 +67,20 @@ function App() {
     if (localStorage.getItem("token")) {
       dispatch(fetchCurrentUser());
     }
-    dispatch(loadAssets());
-    if (!activeProjectId) {
-      dispatch(createProject(undefined));
-    }
     renderWorker.init();
     return () => {
       renderWorker.destroy();
     };
   }, []); // eslint-disable-line
+
+  useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      dispatch(loadAssets());
+      if (!activeProjectId) {
+        dispatch(createProject(undefined));
+      }
+    }
+  }, [dispatch, isAuthenticated, user?.id, activeProjectId]);
 
   useEffect(() => {
     if (!sceneGraph || !activeProjectId) return;
@@ -277,6 +282,7 @@ function App() {
                       <button
                         onClick={() => {
                           dispatch(logout());
+                          dispatch(resetEditor());
                           setIsUserMenuOpen(false);
                         }}
                         className="w-full flex items-center gap-2 px-3 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-xl transition-colors text-left cursor-pointer mt-1"
