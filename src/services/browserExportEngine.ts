@@ -31,31 +31,69 @@ interface EncoderAdapter {
 
 /**
  * Check if we can and should render in the browser.
- * Returns { canRender, capabilities, estimatedSec, reason }
+ * Supports forceMode ('auto' | 'browser' | 'server') allowing the user to switch target.
  */
-export async function canRenderInBrowser(sceneGraph: any): Promise<{
+export async function canRenderInBrowser(
+  sceneGraph: any,
+  forceMode: 'auto' | 'browser' | 'server' = 'auto',
+): Promise<{
   canRender: boolean;
   capabilities: BrowserCapabilities;
   estimatedSec: number;
   reason: string;
+  isAutoSelected: boolean;
 }> {
   const caps = await detectCapabilities();
   const estimatedSec = estimateRenderTimeSec(sceneGraph, caps);
 
-  if (caps.recommendedEncoder === 'server') {
-    return { canRender: false, capabilities: caps, estimatedSec, reason: 'No browser encoder available' };
+  if (forceMode === 'server') {
+    return {
+      canRender: false,
+      capabilities: caps,
+      estimatedSec,
+      reason: 'User selected Server Engine',
+      isAutoSelected: false,
+    };
   }
 
+  if (caps.recommendedEncoder === 'server') {
+    return {
+      canRender: false,
+      capabilities: caps,
+      estimatedSec,
+      reason: 'No browser encoder available',
+      isAutoSelected: true,
+    };
+  }
+
+  if (forceMode === 'browser') {
+    return {
+      canRender: true,
+      capabilities: caps,
+      estimatedSec,
+      reason: 'User selected Browser Engine',
+      isAutoSelected: false,
+    };
+  }
+
+  // Default Auto mode (> 7 min => Server, < 7 min => Browser)
   if (estimatedSec >= BROWSER_RENDER_THRESHOLD_SEC) {
     return {
       canRender: false,
       capabilities: caps,
       estimatedSec,
       reason: `Estimated render time (${Math.ceil(estimatedSec / 60)} min) exceeds 7 min threshold`,
+      isAutoSelected: true,
     };
   }
 
-  return { canRender: true, capabilities: caps, estimatedSec, reason: 'OK' };
+  return {
+    canRender: true,
+    capabilities: caps,
+    estimatedSec,
+    reason: `Estimated render time (${Math.ceil(estimatedSec)}s) < 7 min threshold`,
+    isAutoSelected: true,
+  };
 }
 
 /**

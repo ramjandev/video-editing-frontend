@@ -23,6 +23,7 @@ export interface EditorState {
   isPlaying: boolean;
   exportEta: number | null;
   exportStatus: string;
+  exportModePreference: 'auto' | 'browser' | 'server';
   // Undo/redo history
   past: SceneGraph[];
   future: SceneGraph[];
@@ -41,6 +42,7 @@ const initialState: EditorState = {
   isPlaying: false,
   exportEta: null,
   exportStatus: 'preparing',
+  exportModePreference: 'auto',
   past: [],
   future: [],
 };
@@ -656,6 +658,9 @@ const editorSlice = createSlice({
     setExportUrl: (state, action: PayloadAction<string | null>) => {
       state.exportUrl = action.payload;
     },
+    setExportModePreference: (state, action: PayloadAction<'auto' | 'browser' | 'server'>) => {
+      state.exportModePreference = action.payload;
+    },
     resetEditor: (state) => {
       state.activeProjectId = null;
       state.sceneGraph = null;
@@ -668,6 +673,7 @@ const editorSlice = createSlice({
       state.isPlaying = false;
       state.exportEta = null;
       state.exportStatus = 'preparing';
+      state.exportModePreference = 'auto';
       state.past = [];
       state.future = [];
     },
@@ -699,6 +705,7 @@ export const {
   setExportProgress,
   setExportProgressDetails,
   setExportUrl,
+  setExportModePreference,
   togglePlay,
   resetEditor,
 } = editorSlice.actions;

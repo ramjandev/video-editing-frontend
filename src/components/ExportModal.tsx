@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
-import { setExporting } from '@/store/editorSlice';
+import { setExporting, setExportModePreference } from '@/store/editorSlice';
+import { exportVideo } from '@/store/thunks';
 import { addToast } from '@/store/uiSlice';
-import { X, Download, CheckCircle2, Zap, Loader2, ExternalLink } from 'lucide-react';
+import { X, Download, CheckCircle2, Zap, Loader2, ExternalLink, Cpu, Server, Sparkles } from 'lucide-react';
 import { getMediaUrl } from '@/lib/api';
 import { downloadMediaFile } from '@/lib/utils';
 
 export function ExportModal() {
   const dispatch = useAppDispatch();
-  const { isExporting, exportProgress, exportUrl, exportEta, exportStatus } = useAppSelector(
+  const { isExporting, exportProgress, exportUrl, exportEta, exportStatus, exportModePreference } = useAppSelector(
     (state) => state.editor,
   );
   const [isDownloading, setIsDownloading] = useState(false);
@@ -62,6 +63,12 @@ export function ExportModal() {
     } finally {
       setIsDownloading(false);
     }
+  };
+
+  const handleSwitchMode = (newMode: 'auto' | 'browser' | 'server') => {
+    if (newMode === exportModePreference) return;
+    dispatch(setExportModePreference(newMode));
+    dispatch(exportVideo({ mode: newMode }));
   };
 
   // Automatically trigger download on export completion
@@ -147,6 +154,58 @@ export function ExportModal() {
           </div>
         ) : (
           <div className="w-full flex flex-col items-center mt-2">
+            {/* Render Location Switcher */}
+            <div className="w-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 rounded-xl p-1.5 mb-4">
+              <div className="text-[10px] uppercase font-semibold tracking-wider text-slate-400 dark:text-slate-500 mb-1 px-1.5 pt-0.5 flex items-center justify-between">
+                <span>Render Location Target</span>
+                <span className="normal-case text-[10px] text-sky-600 dark:text-sky-400 font-semibold">
+                  {exportModePreference === 'auto'
+                    ? '🤖 Auto (7m threshold)'
+                    : exportModePreference === 'browser'
+                    ? '⚡ Forced Browser'
+                    : '🖥️ Forced Server'}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => handleSwitchMode('auto')}
+                  className={`py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                    exportModePreference === 'auto'
+                      ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 shadow-xs border border-slate-200 dark:border-slate-600'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="Auto: >7 min renders on Server, <7 min renders in Browser"
+                >
+                  <Sparkles className="w-3 h-3" /> Auto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchMode('browser')}
+                  className={`py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                    exportModePreference === 'browser'
+                      ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs border border-slate-200 dark:border-slate-600'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="Force render in local browser using WebCodecs/WASM"
+                >
+                  <Cpu className="w-3 h-3" /> Browser
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchMode('server')}
+                  className={`py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                    exportModePreference === 'server'
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200 dark:border-slate-600'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="Force render on cloud server using FFmpeg"
+                >
+                  <Server className="w-3 h-3" /> Server
+                </button>
+              </div>
+            </div>
+
             {/* Progress bar */}
             <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-3 mb-3 overflow-hidden relative border border-slate-200 dark:border-slate-700/60">
               <div
@@ -165,7 +224,7 @@ export function ExportModal() {
             </div>
 
             <p className="text-slate-500 dark:text-slate-400 text-[11px] text-center mb-6">
-              {exportStatus || 'Orchestrating render pipeline across distributed nodes...'}
+              {exportStatus || 'Orchestrating render pipeline...'}
             </p>
 
             <button

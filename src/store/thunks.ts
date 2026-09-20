@@ -198,10 +198,12 @@ export const triggerAutosave = createAsyncThunk(
 
 export const exportVideo = createAsyncThunk(
   'editor/exportVideo',
-  async (_, { dispatch, getState }) => {
+  async (options: { mode?: 'auto' | 'browser' | 'server' } | void, { dispatch, getState }) => {
     const state = getState() as RootState;
-    const { sceneGraph } = state.editor;
+    const { sceneGraph, exportModePreference } = state.editor;
     if (!sceneGraph) return;
+
+    const targetMode = options?.mode || exportModePreference || 'auto';
 
     // Clone sceneGraph and resolve any blob: URLs to server URLs before sending
     const updatedSceneGraph = JSON.parse(JSON.stringify(sceneGraph));
@@ -240,14 +242,11 @@ export const exportVideo = createAsyncThunk(
     dispatch({ type: 'editor/setExporting', payload: true });
 
     // ───────────────────────────────────────────────────────────
-    // 7-Minute Threshold Router
-    // Check if we can render in the browser (< 7 min estimated)
-    // Chrome/Edge → WebCodecs H.264 (hardware-accelerated)
-    // Firefox/Safari → ffmpeg.wasm (WASM software encoding)
-    // Fallback → Server-side FFmpeg
+    // 7-Minute Threshold & User-Override Router
+    // mode = 'auto' (default 7-min rule), 'browser' (force local), 'server' (force cloud)
     // ───────────────────────────────────────────────────────────
     try {
-      const { canRender, capabilities, estimatedSec, reason } = await canRenderInBrowser(updatedSceneGraph);
+      const { canRender, capabilities, estimatedSec, reason, isAutoSelected } = await canRenderInBrowser(updatedSceneGraph, targetMode);
 
       if (canRender) {
         const encoderLabel =
@@ -255,17 +254,19 @@ export const exportVideo = createAsyncThunk(
           capabilities.recommendedEncoder === 'wasm' ? 'ffmpeg.wasm (WASM)' :
           'MediaRecorder (WebM)';
 
+        const modeBadge = isAutoSelected ? '[Auto: <7m]' : '[User Selected]';
+
         dispatch(
           addToast({
             type: 'info',
-            message: `🚀 Rendering in your browser using ${encoderLabel} (~${Math.ceil(estimatedSec)}s estimated)`,
+            message: `🚀 Rendering in browser ${modeBadge} using ${encoderLabel} (~${Math.ceil(estimatedSec)}s estimated)`,
           })
         );
 
         dispatch(setExportProgressDetails({
           percent: 2,
           eta: Math.ceil(estimatedSec),
-          status: `Browser ${capabilities.browserName} → ${encoderLabel}`,
+          status: `Browser Engine (${encoderLabel}) ${modeBadge}`,
         }));
 
         // Execute browser-side export
@@ -285,7 +286,6 @@ export const exportVideo = createAsyncThunk(
           onError: (message) => {
             console.warn('[BrowserExport] Failed, falling back to server:', message);
             dispatch(addToast({ type: 'warning', message: `Browser export failed: ${message}. Falling back to server...` }));
-            // Fall through to server export below
           },
         });
 
@@ -293,14 +293,14 @@ export const exportVideo = createAsyncThunk(
         const postState = (getState() as RootState).editor;
         if (postState.exportUrl) return;
 
-        // If browser export failed, fall through to server export
         dispatch(addToast({ type: 'info', message: '⚙️ Switching to server-side rendering...' }));
       } else {
+        const modeBadge = isAutoSelected ? `[Auto: >7m (${reason})]` : '[User Selected Server]';
         console.log(`[ExportRouter] Server route: ${reason}`);
         dispatch(setExportProgressDetails({
           percent: 2,
           eta: null,
-          status: 'Sending to server render engine...',
+          status: `Cloud Server FFmpeg Engine ${modeBadge}`,
         }));
       }
     } catch (routerError) {
