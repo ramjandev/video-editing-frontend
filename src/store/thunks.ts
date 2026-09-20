@@ -13,6 +13,7 @@ import {
 } from './editorSlice';
 import { addToast } from './uiSlice';
 import type { RootState } from './index';
+import { canRenderInBrowser, exportInBrowser } from '@/services/browserExportEngine';
 
 export { API_BASE };
 
@@ -238,6 +239,77 @@ export const exportVideo = createAsyncThunk(
 
     dispatch({ type: 'editor/setExporting', payload: true });
 
+    // ───────────────────────────────────────────────────────────
+    // 7-Minute Threshold Router
+    // Check if we can render in the browser (< 7 min estimated)
+    // Chrome/Edge → WebCodecs H.264 (hardware-accelerated)
+    // Firefox/Safari → ffmpeg.wasm (WASM software encoding)
+    // Fallback → Server-side FFmpeg
+    // ───────────────────────────────────────────────────────────
+    try {
+      const { canRender, capabilities, estimatedSec, reason } = await canRenderInBrowser(updatedSceneGraph);
+
+      if (canRender) {
+        const encoderLabel =
+          capabilities.recommendedEncoder === 'webcodecs' ? 'WebCodecs H.264 (hardware)' :
+          capabilities.recommendedEncoder === 'wasm' ? 'ffmpeg.wasm (WASM)' :
+          'MediaRecorder (WebM)';
+
+        dispatch(
+          addToast({
+            type: 'info',
+            message: `🚀 Rendering in your browser using ${encoderLabel} (~${Math.ceil(estimatedSec)}s estimated)`,
+          })
+        );
+
+        dispatch(setExportProgressDetails({
+          percent: 2,
+          eta: Math.ceil(estimatedSec),
+          status: `Browser ${capabilities.browserName} → ${encoderLabel}`,
+        }));
+
+        // Execute browser-side export
+        await exportInBrowser(updatedSceneGraph, {
+          onProgress: (percent, status, etaSec) => {
+            dispatch(setExportProgressDetails({
+              percent,
+              eta: etaSec !== null ? Math.ceil(etaSec) : null,
+              status,
+            }));
+          },
+          onComplete: (url) => {
+            dispatch(setExportUrl(url));
+            dispatch(loadAssets());
+            dispatch(addToast({ type: 'success', message: '🎬 Browser export complete! Click download to save.' }));
+          },
+          onError: (message) => {
+            console.warn('[BrowserExport] Failed, falling back to server:', message);
+            dispatch(addToast({ type: 'warning', message: `Browser export failed: ${message}. Falling back to server...` }));
+            // Fall through to server export below
+          },
+        });
+
+        // If exportUrl was set by onComplete, we're done
+        const postState = (getState() as RootState).editor;
+        if (postState.exportUrl) return;
+
+        // If browser export failed, fall through to server export
+        dispatch(addToast({ type: 'info', message: '⚙️ Switching to server-side rendering...' }));
+      } else {
+        console.log(`[ExportRouter] Server route: ${reason}`);
+        dispatch(setExportProgressDetails({
+          percent: 2,
+          eta: null,
+          status: 'Sending to server render engine...',
+        }));
+      }
+    } catch (routerError) {
+      console.warn('[ExportRouter] Capability check failed, using server:', routerError);
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // Server-Side FFmpeg Export (original path)
+    // ───────────────────────────────────────────────────────────
     const token = localStorage.getItem('token');
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -308,3 +380,4 @@ export const exportVideo = createAsyncThunk(
     }
   }
 );
+
