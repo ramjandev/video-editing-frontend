@@ -6,6 +6,7 @@ import { getMediaUrl } from "@/lib/api";
 import { LayoutGrid } from "lucide-react";
 
 import { mediaManager } from "@/services/mediaManager";
+import { getAssetFrameSnapshots, saveAssetFrameSnapshots } from "@/services/indexedDbCache";
 
 interface PlayerProps {
   zoomScale?: number;
@@ -23,18 +24,18 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
   const { sceneGraph } = useAppSelector((state) => state.editor);
   const videoRefs = useRef<Map<string, HTMLMediaElement>>(new Map());
   const seekMapRef = useRef<Map<string, MediaSeekTracker>>(new Map());
-  const frameCacheRef = useRef<Map<string, Map<number, HTMLCanvasElement>>>(new Map());
+  const frameCacheRef = useRef<Map<string, Map<number, HTMLCanvasElement | HTMLImageElement>>>(new Map());
   const sampledClipsRef = useRef<Set<string>>(new Set());
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const reqRef = useRef<number>(0);
   const imageCache = useRef<Record<string, HTMLImageElement>>({});
 
-  const saveFrameSnapshot = (clipId: string, time: number, source: HTMLVideoElement) => {
-    if (!source || source.videoWidth === 0) return;
-    let clipMap = frameCacheRef.current.get(clipId);
+  const saveFrameSnapshot = (assetKey: string, time: number, source: HTMLVideoElement) => {
+    if (!source || source.videoWidth === 0 || !assetKey) return;
+    let clipMap = frameCacheRef.current.get(assetKey);
     if (!clipMap) {
       clipMap = new Map();
-      frameCacheRef.current.set(clipId, clipMap);
+      frameCacheRef.current.set(assetKey, clipMap);
     }
     const key = Math.round(time * 2) / 2; // 0.5s resolution
     if (!clipMap.has(key) && clipMap.size < 300) {
@@ -51,9 +52,9 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
     }
   };
 
-  const triggerLocalPreSampling = (clipId: string, blobUrl: string, duration: number) => {
-    if (sampledClipsRef.current.has(clipId) || !blobUrl.startsWith("blob:")) return;
-    sampledClipsRef.current.add(clipId);
+  const triggerLocalPreSampling = (assetKey: string, blobUrl: string, duration: number) => {
+    if (sampledClipsRef.current.has(assetKey) || !blobUrl.startsWith("blob:")) return;
+    sampledClipsRef.current.add(assetKey);
 
     const offscreen = document.createElement("video");
     offscreen.src = blobUrl;
@@ -68,6 +69,21 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
       if (sampleSec > clipDuration) {
         offscreen.removeAttribute("src");
         offscreen.load();
+        // Persist frame snapshots to IndexedDB for instant reload support
+        const clipMap = frameCacheRef.current.get(assetKey);
+        if (clipMap && clipMap.size > 0) {
+          const framesToStore: { time: number; dataUrl: string }[] = [];
+          clipMap.forEach((val, time) => {
+            if (val instanceof HTMLCanvasElement) {
+              try {
+                framesToStore.push({ time, dataUrl: val.toDataURL("image/jpeg", 0.6) });
+              } catch {}
+            }
+          });
+          if (framesToStore.length > 0) {
+            saveAssetFrameSnapshots(assetKey, framesToStore);
+          }
+        }
         return;
       }
       offscreen.currentTime = sampleSec;
@@ -83,29 +99,29 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
 
     offscreen.addEventListener("seeked", () => {
       if (offscreen.videoWidth > 0) {
-        saveFrameSnapshot(clipId, sampleSec, offscreen);
+        saveFrameSnapshot(assetKey, sampleSec, offscreen);
       }
       sampleSec += step;
       sampleNext();
     });
   };
 
-  const getClosestFrame = (clipId: string, targetTime: number): HTMLCanvasElement | null => {
-    const clipMap = frameCacheRef.current.get(clipId);
+  const getClosestFrame = (assetKey: string, targetTime: number): CanvasImageSource | null => {
+    const clipMap = frameCacheRef.current.get(assetKey);
     if (!clipMap || clipMap.size === 0) return null;
 
-    let closestCanvas: HTMLCanvasElement | null = null;
+    let closestFrame: CanvasImageSource | null = null;
     let minDiff = Infinity;
 
-    for (const [key, canvas] of clipMap.entries()) {
+    for (const [key, frame] of clipMap.entries()) {
       const diff = Math.abs(key - targetTime);
       if (diff < minDiff) {
         minDiff = diff;
-        closestCanvas = canvas;
+        closestFrame = frame;
       }
     }
 
-    return closestCanvas;
+    return closestFrame;
   };
 
   // Full unmount cleanup
@@ -134,9 +150,27 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
         if (clip.asset.type === "video" || clip.asset.type === "audio") {
           currentClipIds.add(clip.id);
 
+          const assetKey = clip.asset._id || clip.asset.public_id || clip.id;
           const media = videoRefs.current.get(clip.id);
           const isAudio = clip.asset.type === "audio";
           const rawUrl = getMediaUrl(clip.asset.preview_url || clip.asset.original_url);
+
+          // Asynchronously pre-load saved frame snapshots from IndexedDB if not already in memory
+          if (!isAudio && assetKey && !frameCacheRef.current.has(assetKey)) {
+            frameCacheRef.current.set(assetKey, new Map());
+            getAssetFrameSnapshots(assetKey).then((savedFrames) => {
+              if (savedFrames && savedFrames.length > 0) {
+                const map = frameCacheRef.current.get(assetKey) || new Map();
+                savedFrames.forEach(({ time, dataUrl }) => {
+                  const img = new Image();
+                  img.src = dataUrl;
+                  map.set(time, img);
+                });
+                frameCacheRef.current.set(assetKey, map);
+                sampledClipsRef.current.add(assetKey);
+              }
+            });
+          }
 
           if (media) {
             // Hot-swap media src if 480p preview proxy becomes available
@@ -186,7 +220,7 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
             const onSeeked = () => {
               tracker.isSeeking = false;
               if (createdMedia instanceof HTMLVideoElement) {
-                saveFrameSnapshot(clip.id, createdMedia.currentTime, createdMedia);
+                saveFrameSnapshot(assetKey, createdMedia.currentTime, createdMedia);
               }
 
               if (tracker.pendingTime !== null) {
@@ -213,7 +247,7 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
 
                 if (!isAudio) {
                   triggerLocalPreSampling(
-                    clip.id,
+                    assetKey,
                     blobUrl,
                     clip.asset.duration || clip.endTime - clip.startTime
                   );
@@ -224,7 +258,7 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
             // If already cached locally, trigger pre-sampling right away
             if (cachedBlobUrl && !isAudio) {
               triggerLocalPreSampling(
-                clip.id,
+                assetKey,
                 cachedBlobUrl,
                 clip.asset.duration || clip.endTime - clip.startTime
               );
@@ -357,6 +391,7 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
 
         if (clip.asset.type === "video" && clip.id === currentVideoClip?.id && video) {
           try {
+            const assetKey = clip.asset._id || clip.asset.public_id || clip.id;
             const currentClipTime = clip.trimIn + (currentPlayhead - clip.startTime);
             const tracker = seekMapRef.current.get(clip.id);
 
@@ -371,7 +406,7 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
               const y = (canvas.height - h) / 2;
 
               // If scrubbing fast and we have a cached snapshot close to target time, show snapshot for instant feedback
-              const cached = tracker?.isSeeking ? getClosestFrame(clip.id, currentClipTime) : null;
+              const cached = tracker?.isSeeking ? getClosestFrame(assetKey, currentClipTime) : null;
               if (cached) {
                 ctx.drawImage(cached, x, y, w, h);
               } else {
@@ -380,7 +415,7 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
               }
 
               if (!tracker?.isSeeking && video.readyState >= 2) {
-                saveFrameSnapshot(clip.id, currentClipTime, video);
+                saveFrameSnapshot(assetKey, currentClipTime, video);
               }
             }
           } catch (e) {

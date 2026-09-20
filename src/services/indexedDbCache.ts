@@ -136,3 +136,37 @@ export async function clearMediaCache(): Promise<void> {
     console.warn("[IndexedDB] Failed to clear media cache", err);
   }
 }
+
+export interface FrameData {
+  time: number;
+  dataUrl: string;
+}
+
+/**
+ * Save asset frame snapshots to IndexedDB.
+ */
+export async function saveAssetFrameSnapshots(assetId: string, frames: FrameData[]): Promise<void> {
+  try {
+    const key = `frames_${assetId}`;
+    const blob = new Blob([JSON.stringify(frames)], { type: "application/json" });
+    await saveMediaBlob(key, blob);
+  } catch (err) {
+    console.warn(`[IndexedDB] Failed to save frame snapshots for asset: ${assetId}`, err);
+  }
+}
+
+/**
+ * Retrieve asset frame snapshots from IndexedDB.
+ */
+export async function getAssetFrameSnapshots(assetId: string): Promise<FrameData[]> {
+  try {
+    const key = `frames_${assetId}`;
+    const blob = await getMediaBlob(key);
+    if (!blob) return [];
+    const text = await blob.text();
+    return JSON.parse(text);
+  } catch (err) {
+    console.warn(`[IndexedDB] Failed to get frame snapshots for asset: ${assetId}`, err);
+    return [];
+  }
+}
