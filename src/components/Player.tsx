@@ -138,7 +138,18 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
           const isAudio = clip.asset.type === "audio";
           const rawUrl = getMediaUrl(clip.asset.preview_url || clip.asset.original_url);
 
-          if (!media) {
+          if (media) {
+            // Hot-swap media src if 480p preview proxy becomes available
+            const cachedBlobUrl = mediaManager.getCachedBlobUrlSync(clip.asset._id, rawUrl);
+            const targetUrl = cachedBlobUrl || rawUrl;
+            if (targetUrl && clip.asset.preview_url && !media.src.includes(clip.asset.preview_url)) {
+              const currentPos = media.currentTime;
+              const wasPaused = media.paused;
+              media.src = targetUrl;
+              media.currentTime = currentPos;
+              if (!wasPaused) media.play().catch(() => {});
+            }
+          } else {
             const createdMedia = document.createElement(isAudio ? "audio" : "video");
             const cachedBlobUrl = mediaManager.getCachedBlobUrlSync(clip.asset._id, rawUrl);
             createdMedia.src = cachedBlobUrl || rawUrl;
