@@ -70,6 +70,16 @@ export async function canRenderInBrowser(
   };
 }
 
+let activeExportId = 0;
+
+/**
+ * Cancels any currently running browser export loop immediately.
+ */
+export function cancelCurrentBrowserExport(): void {
+  activeExportId++;
+  console.log(`[BrowserExportEngine] Active browser export cancelled/invalidated (New ID: ${activeExportId}).`);
+}
+
 /**
  * Main browser export function.
  * Renders the sceneGraph frame-by-frame on canvas and encodes to MP4.
@@ -78,6 +88,7 @@ export async function exportInBrowser(
   sceneGraph: any,
   callbacks: BrowserExportCallbacks,
 ): Promise<void> {
+  const currentId = ++activeExportId;
   const caps = await detectCapabilities();
   const fps = sceneGraph.fps || 30;
   const duration = sceneGraph.duration || 10;
@@ -96,7 +107,11 @@ export async function exportInBrowser(
       height,
       fps,
       bitrate: 4_000_000,
-      onProgress: (p) => callbacks.onProgress(p, `Encoding with ${encoderName}...`, null),
+      onProgress: (p) => {
+        if (currentId === activeExportId) {
+          callbacks.onProgress(p, `Encoding with ${encoderName}...`, null);
+        }
+      },
     });
   } else if (caps.hasWasm && caps.hasSharedArrayBuffer) {
     encoderName = 'ffmpeg.wasm (WASM)';
@@ -105,15 +120,21 @@ export async function exportInBrowser(
       height,
       fps,
       bitrate: 4_000_000,
-      onProgress: (p) => callbacks.onProgress(p, `Encoding with ${encoderName}...`, null),
+      onProgress: (p) => {
+        if (currentId === activeExportId) {
+          callbacks.onProgress(p, `Encoding with ${encoderName}...`, null);
+        }
+      },
       onLog: (msg) => console.log('[WasmEncoder]', msg),
     });
   } else {
     // MediaRecorder fallback — produces WebM, not MP4
     encoderName = 'MediaRecorder (WebM)';
-    encoder = createMediaRecorderAdapter(width, height, fps, (p) =>
-      callbacks.onProgress(p, `Encoding with ${encoderName}...`, null),
-    );
+    encoder = createMediaRecorderAdapter(width, height, fps, (p) => {
+      if (currentId === activeExportId) {
+        callbacks.onProgress(p, `Encoding with ${encoderName}...`, null);
+      }
+    });
   }
 
   callbacks.onProgress(2, `Initializing ${encoderName} encoder...`, null);
@@ -121,6 +142,7 @@ export async function exportInBrowser(
   try {
     // 1. Initialize encoder
     await encoder.init(totalFrames);
+    if (currentId !== activeExportId) return;
 
     // 2. Create offscreen canvas
     const canvas = document.createElement('canvas');
@@ -131,11 +153,16 @@ export async function exportInBrowser(
     // 3. Preload media assets
     callbacks.onProgress(5, 'Loading media assets...', null);
     const videoElements = await preloadAssets(sceneGraph);
+    if (currentId !== activeExportId) return;
 
     // 4. Render frame-by-frame
     const startTime = performance.now();
 
     for (let frame = 0; frame < totalFrames; frame++) {
+      if (currentId !== activeExportId) {
+        console.log(`[BrowserExportEngine] Export #${currentId} cancelled during frame ${frame + 1}.`);
+        return;
+      }
       const currentTime = frame / fps;
 
       // Clear canvas

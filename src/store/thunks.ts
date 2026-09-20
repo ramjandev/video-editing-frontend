@@ -13,7 +13,7 @@ import {
 } from './editorSlice';
 import { addToast } from './uiSlice';
 import type { RootState } from './index';
-import { canRenderInBrowser, exportInBrowser } from '@/services/browserExportEngine';
+import { canRenderInBrowser, exportInBrowser, cancelCurrentBrowserExport } from '@/services/browserExportEngine';
 
 export { API_BASE };
 
@@ -199,6 +199,9 @@ export const triggerAutosave = createAsyncThunk(
 export const exportVideo = createAsyncThunk(
   'editor/exportVideo',
   async (options: { mode?: 'browser' | 'server' } | void, { dispatch, getState }) => {
+    // Cancel any active browser export loop before launching new export
+    cancelCurrentBrowserExport();
+
     const state = getState() as RootState;
     const { sceneGraph, exportModePreference } = state.editor;
     if (!sceneGraph) return;

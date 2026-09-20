@@ -7,9 +7,15 @@ import { X, Download, CheckCircle2, Zap, Loader2, ExternalLink, Cpu, Server, Pla
 import { getMediaUrl } from '@/lib/api';
 import { downloadMediaFile } from '@/lib/utils';
 import { estimateRenderTimeSec, detectCapabilities } from '@/services/browserCapabilities';
+import { cancelCurrentBrowserExport } from '@/services/browserExportEngine';
 
 export function ExportModal() {
   const dispatch = useAppDispatch();
+
+  const handleClose = () => {
+    cancelCurrentBrowserExport();
+    dispatch(closeExportModal());
+  };
   const {
     isExportModalOpen,
     isExporting,
@@ -112,7 +118,7 @@ export function ExportModal() {
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 w-full max-w-md flex flex-col items-center relative overflow-hidden text-slate-800 dark:text-slate-100">
         {/* Top close button */}
         <button
-          onClick={() => dispatch(closeExportModal())}
+          onClick={handleClose}
           className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-md transition-colors cursor-pointer"
         >
           <X className="w-5 h-5" />
@@ -227,7 +233,7 @@ export function ExportModal() {
             <div className="flex items-center gap-2.5 w-full">
               <button
                 type="button"
-                onClick={() => dispatch(closeExportModal())}
+                onClick={handleClose}
                 className="flex-1 py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
               >
                 Cancel
@@ -288,7 +294,7 @@ export function ExportModal() {
             </a>
 
             <button
-              onClick={() => dispatch(closeExportModal())}
+              onClick={handleClose}
               className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 text-xs py-1.5 transition-colors cursor-pointer"
             >
               Back to Studio Editor
@@ -339,7 +345,7 @@ export function ExportModal() {
             </p>
 
             <button
-              onClick={() => dispatch(closeExportModal())}
+              onClick={handleClose}
               className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs transition-colors cursor-pointer font-semibold"
             >
               Cancel Render
