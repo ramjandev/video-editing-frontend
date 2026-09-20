@@ -3,6 +3,13 @@ import { setPlayhead, togglePlay } from "@/store/editorSlice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import type { Clip } from "@/types";
 import { useEffect, useRef } from "react";
+import { getMediaUrl } from "@/lib/api";
+
+interface MediaSeekTracker {
+  isSeeking: boolean;
+  pendingTime: number | null;
+  cleanup?: () => void;
+}
 
 export function PreviewModal({ onClose }: { onClose: () => void }) {
   const dispatch = useAppDispatch();
@@ -11,6 +18,7 @@ export function PreviewModal({ onClose }: { onClose: () => void }) {
   );
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const seekMapRef = useRef<Map<string, MediaSeekTracker>>(new Map());
 
   // Cache for images
   const imageCache = useRef<Record<string, HTMLImageElement>>({});
@@ -26,16 +34,57 @@ export function PreviewModal({ onClose }: { onClose: () => void }) {
           !videoRefs.current.has(clip.assetId)
         ) {
           const video = document.createElement("video");
-          video.src = clip.asset.preview_url;
-          video.crossOrigin = "anonymous";
+          const url = getMediaUrl(clip.asset.preview_url || clip.asset.original_url);
+          video.src = url;
+          if (url.startsWith("http")) {
+            video.crossOrigin = "anonymous";
+          }
           video.preload = "auto";
           video.muted = false; // We want audio in preview
+
+          const tracker: MediaSeekTracker = {
+            isSeeking: false,
+            pendingTime: null,
+          };
+          seekMapRef.current.set(clip.assetId, tracker);
+
+          const performSeek = (time: number) => {
+            tracker.isSeeking = true;
+            if ("fastSeek" in video && typeof (video as any).fastSeek === "function") {
+              try {
+                (video as any).fastSeek(time);
+              } catch {
+                video.currentTime = time;
+              }
+            } else {
+              video.currentTime = time;
+            }
+          };
+
+          const onSeeked = () => {
+            tracker.isSeeking = false;
+            if (tracker.pendingTime !== null) {
+              const nextTime = tracker.pendingTime;
+              tracker.pendingTime = null;
+              if (Math.abs(video.currentTime - nextTime) > 0.02) {
+                performSeek(nextTime);
+              }
+            }
+          };
+
+          video.addEventListener("seeked", onSeeked);
+          tracker.cleanup = () => video.removeEventListener("seeked", onSeeked);
+
           videoRefs.current.set(clip.assetId, video);
         }
       });
     });
 
     return () => {
+      seekMapRef.current.forEach((t) => {
+        if (t.cleanup) t.cleanup();
+      });
+      seekMapRef.current.clear();
       videoRefs.current.forEach((video) => {
         video.pause();
         video.removeAttribute("src");
@@ -95,12 +144,30 @@ export function PreviewModal({ onClose }: { onClose: () => void }) {
               if (!video.paused) {
                 video.pause();
               }
-              if (Math.abs(video.currentTime - currentClipTime) > 0.05) {
-                video.currentTime = currentClipTime;
+              if (clip.asset.type === "audio") return;
+
+              const tracker = seekMapRef.current.get(clip.assetId);
+              if (tracker) {
+                if (Math.abs(video.currentTime - currentClipTime) > 0.02) {
+                  if (video.seeking || tracker.isSeeking) {
+                    tracker.pendingTime = currentClipTime;
+                  } else {
+                    tracker.isSeeking = true;
+                    if ("fastSeek" in video && typeof (video as any).fastSeek === "function") {
+                      try {
+                        (video as any).fastSeek(currentClipTime);
+                      } catch {
+                        video.currentTime = currentClipTime;
+                      }
+                    } else {
+                      video.currentTime = currentClipTime;
+                    }
+                  }
+                }
               }
             }
 
-            if (clip.asset.type === "video" && video.readyState >= 2) {
+            if (clip.asset.type === "video" && video.videoWidth > 0 && (video.readyState >= 1 || video.currentTime > 0)) {
               // Basic scale to fit keeping aspect ratio
               const scale = Math.min(
                 canvas.width / video.videoWidth,

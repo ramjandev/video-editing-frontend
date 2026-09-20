@@ -1,20 +1,17 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
 import { setExporting } from '@/store/editorSlice';
-import { X, Download, CheckCircle2, Zap } from 'lucide-react';
-import { BACKEND_URL, API_BASE } from '@/lib/api';
+import { addToast } from '@/store/uiSlice';
+import { X, Download, CheckCircle2, Zap, Loader2, ExternalLink } from 'lucide-react';
+import { getMediaUrl } from '@/lib/api';
+import { downloadMediaFile } from '@/lib/utils';
 
 export function ExportModal() {
   const dispatch = useAppDispatch();
   const { isExporting, exportProgress, exportUrl, exportEta, exportStatus } = useAppSelector(
     (state) => state.editor,
   );
-
-  // Resolve clean download URL
-  let resolvedDownloadUrl = exportUrl;
-  if (resolvedDownloadUrl && resolvedDownloadUrl.startsWith('/')) {
-    resolvedDownloadUrl = `${BACKEND_URL}${resolvedDownloadUrl}`;
-  }
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const getFilenameFromUrl = (url?: string | null): string => {
     if (!url || typeof url !== 'string') return `export_${Date.now()}.mp4`;
@@ -22,40 +19,59 @@ export function ExportModal() {
     const parts = cleanUrl.split('/uploads/');
     const lastPart = parts[parts.length - 1];
     if (lastPart && lastPart.trim().length > 0) {
-      return lastPart;
+      return lastPart.split('/').pop() || lastPart;
     }
     const slashParts = cleanUrl.split('/');
     return slashParts[slashParts.length - 1] || `export_${Date.now()}.mp4`;
   };
 
-  const triggerDownload = (url: string) => {
-    if (!url) return;
-    const filename = getFilenameFromUrl(url);
-    const downloadEndpoint = `${API_BASE}/download/${filename}`;
+  const formatEta = (totalSeconds: number): string => {
+    const rounded = Math.max(0, Math.round(totalSeconds));
+    if (rounded <= 0) return 'Almost done...';
 
-    const a = document.createElement('a');
-    a.href = downloadEndpoint;
-    a.download = filename;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const hours = Math.floor(rounded / 3600);
+    const minutes = Math.floor((rounded % 3600) / 60);
+    const seconds = rounded % 60;
+
+    if (hours > 0) {
+      return minutes > 0 ? `${hours} hr ${minutes} min` : `${hours} hr`;
+    }
+
+    if (minutes > 0) {
+      return seconds > 0 ? `${minutes} min ${seconds} s` : `${minutes} min`;
+    }
+
+    return `${seconds} s`;
   };
 
-  // Automatically trigger file download when export reaches completion
+  const handleDownload = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (!exportUrl || isDownloading) return;
+
+    const filename = getFilenameFromUrl(exportUrl);
+    setIsDownloading(true);
+    dispatch(addToast({ type: 'info', message: `Starting download for "${filename}"...` }));
+
+    try {
+      await downloadMediaFile(exportUrl, filename);
+      dispatch(addToast({ type: 'success', message: `Download initiated for "${filename}"!` }));
+    } catch (err) {
+      console.error('Download error:', err);
+      dispatch(addToast({ type: 'error', message: 'Failed to download file directly. Opening in new tab.' }));
+      window.open(getMediaUrl(exportUrl), '_blank');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  // Automatically trigger download on export completion
   useEffect(() => {
-    if (exportUrl) {
-      triggerDownload(exportUrl);
+    if (exportUrl && isExporting) {
+      handleDownload();
     }
   }, [exportUrl]);
 
   if (!isExporting) return null;
-
-  const handleDownload = (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!exportUrl) return;
-    triggerDownload(exportUrl);
-  };
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -82,20 +98,49 @@ export function ExportModal() {
 
         {exportUrl ? (
           <div className="flex flex-col items-center w-full mt-2">
-            <p className="text-xs text-slate-500 dark:text-slate-400 text-center mb-6">
+            <p className="text-xs text-slate-500 dark:text-slate-400 text-center mb-4">
               Your video was composited and rendered successfully. Ready to save or share!
             </p>
 
+            <div className="w-full bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-lg p-2.5 mb-4 flex items-center justify-between text-xs">
+              <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300 truncate max-w-[240px]">
+                {getFilenameFromUrl(exportUrl)}
+              </span>
+              <span className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold">
+                Ready
+              </span>
+            </div>
+
+            {/* Main Download Button */}
             <button
               onClick={handleDownload}
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold py-2.5 px-6 rounded-lg w-full text-center transition-all shadow-lg hover:shadow-blue-500/25 flex items-center justify-center gap-2 mb-3 cursor-pointer text-sm"
+              disabled={isDownloading}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold py-2.5 px-6 rounded-lg w-full text-center transition-all shadow-lg hover:shadow-blue-500/25 flex items-center justify-center gap-2 mb-2 cursor-pointer text-sm disabled:opacity-70"
             >
-              <Download className="w-4 h-4" /> Download Video File
+              {isDownloading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Downloading...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" /> Download Video File
+                </>
+              )}
             </button>
+
+            {/* Direct Open Link fallback */}
+            <a
+              href={getMediaUrl(exportUrl)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 mb-4 py-1"
+            >
+              <ExternalLink className="w-3 h-3" /> Open Video in New Tab
+            </a>
 
             <button
               onClick={() => dispatch(setExporting(false))}
-              className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 text-xs py-2 transition-colors cursor-pointer"
+              className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 text-xs py-1.5 transition-colors cursor-pointer"
             >
               Back to Studio Editor
             </button>
@@ -114,7 +159,9 @@ export function ExportModal() {
 
             <div className="flex justify-between w-full text-xs text-slate-700 dark:text-slate-300 font-medium mb-1">
               <span>{Math.round(exportProgress)}% Completed</span>
-              {exportEta !== null && <span>ETA: {exportEta}s</span>}
+              {exportEta !== null && (
+                <span>Remaining time: {formatEta(exportEta)}</span>
+              )}
             </div>
 
             <p className="text-slate-500 dark:text-slate-400 text-[11px] text-center mb-6">

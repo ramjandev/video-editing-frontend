@@ -108,7 +108,7 @@ export function PropertiesPanel() {
             <div className="space-y-1">
               <span className="text-slate-500 font-medium">Total Timeline Duration</span>
               <div className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 font-mono font-semibold text-slate-700 dark:text-slate-200">
-                {sceneGraph?.duration || 180}s
+                {(sceneGraph?.duration ?? 0).toFixed(1)}s
               </div>
             </div>
 

@@ -1,6 +1,16 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { api, API_BASE } from '@/lib/api';
-import { setAssets, replaceOptimisticAsset, setProject, setExportProgressDetails, setExporting, setExportUrl } from './editorSlice';
+import {
+  setAssets,
+  replaceOptimisticAsset,
+  removeOptimisticAsset,
+  setUploadProgress,
+  removeUploadProgress,
+  setProject,
+  setExportProgressDetails,
+  setExporting,
+  setExportUrl,
+} from './editorSlice';
 import { addToast } from './uiSlice';
 import type { RootState } from './index';
 
@@ -50,23 +60,77 @@ export const uploadAsset = createAsyncThunk(
   'editor/uploadAsset',
   async (payload: File | { file: File; tempId?: string }, { dispatch }) => {
     const file = payload instanceof File ? payload : payload.file;
-    const tempId = payload instanceof File ? undefined : payload.tempId;
+    const tempId = (payload instanceof File ? undefined : payload.tempId) || `temp_${Date.now()}`;
+
+    // Initialize progress tracking
+    dispatch(
+      setUploadProgress({
+        tempId,
+        fileName: file.name,
+        progress: 0,
+        status: 'uploading',
+      })
+    );
 
     const duration = await getVideoDuration(file);
     const formData = new FormData();
     formData.append('video', file);
     formData.append('duration', duration.toString());
+
     try {
-      const response = await api.post('/assets', formData);
+      const response = await api.post('/assets', formData, {
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.min(99, Math.round((progressEvent.loaded * 100) / progressEvent.total));
+            dispatch(
+              setUploadProgress({
+                tempId,
+                fileName: file.name,
+                progress: percent,
+                status: percent >= 99 ? 'processing' : 'uploading',
+              })
+            );
+          }
+        },
+      });
+
+      dispatch(
+        setUploadProgress({
+          tempId,
+          fileName: file.name,
+          progress: 100,
+          status: 'completed',
+        })
+      );
+
       if (tempId && response.data) {
         dispatch(replaceOptimisticAsset({ tempId, realAsset: response.data }));
-      } else {
-        await dispatch(loadAssets());
       }
+      await dispatch(loadAssets());
+
+      setTimeout(() => {
+        dispatch(removeUploadProgress(tempId));
+      }, 1200);
+
       dispatch(addToast({ type: 'success', message: `"${file.name}" uploaded successfully!` }));
       return response.data;
     } catch (error: any) {
-      dispatch(addToast({ type: 'error', message: `Upload failed: ${error?.response?.data?.message || error.message || 'Unknown error'}` }));
+      dispatch(
+        setUploadProgress({
+          tempId,
+          fileName: file.name,
+          progress: 0,
+          status: 'error',
+          error: error?.response?.data?.message || error.message || 'Upload failed',
+        })
+      );
+      dispatch(removeOptimisticAsset(tempId));
+      dispatch(
+        addToast({
+          type: 'error',
+          message: `Upload failed: ${error?.response?.data?.message || error.message || 'Unknown error'}`,
+        })
+      );
       throw error;
     }
   }
@@ -208,6 +272,7 @@ export const exportVideo = createAsyncThunk(
               }));
             } else if (data.type === 'complete') {
               dispatch(setExportUrl(data.url));
+              dispatch(loadAssets());
               dispatch(addToast({ type: 'success', message: '🎬 Export complete! Click download to save.' }));
             } else if (data.type === 'error') {
               console.error('Export error:', data.message);

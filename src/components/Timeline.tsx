@@ -100,9 +100,20 @@ export function Timeline() {
     originalTrackId: string;
   } | null>(null);
 
-  // Smooth playhead dragging & auto-scrolling
+  // Smooth playhead dragging & auto-scrolling with RAF coalescing
   const handlePlayheadMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
+    let rafId: number | null = null;
+    let pendingX: number | null = null;
+
+    const commitPlayhead = () => {
+      if (pendingX !== null) {
+        dispatch(setPlayhead(pendingX / pixelsPerSecond));
+        pendingX = null;
+      }
+      rafId = null;
+    };
+
     const updatePlayhead = (moveEvent: MouseEvent) => {
       const container = document.getElementById("timeline-scroll-container");
       if (container) {
@@ -110,24 +121,36 @@ export function Timeline() {
         let newX = moveEvent.clientX - rect.left + container.scrollLeft - 48;
         newX = Math.max(0, newX);
 
-        // Smooth auto-scroll to the right when dragging indicator right
+        // Smooth auto-scroll when dragging near viewport edges
         if (moveEvent.clientX > rect.right - 50) {
           container.scrollLeft += 15;
         } else if (moveEvent.clientX < rect.left + 80) {
           container.scrollLeft -= 15;
         }
 
-        dispatch(setPlayhead(newX / pixelsPerSecond));
+        pendingX = newX;
+        if (rafId === null) {
+          rafId = requestAnimationFrame(commitPlayhead);
+        }
       }
     };
 
+    // Immediate update on initial click down
     updatePlayhead(e.nativeEvent);
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      commitPlayhead();
+    }
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       updatePlayhead(moveEvent);
     };
 
     const onMouseUp = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        commitPlayhead();
+      }
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
@@ -139,7 +162,7 @@ export function Timeline() {
   const playheadRef = useRef(playhead);
   playheadRef.current = playhead;
 
-  const duration = sceneGraph?.duration || 180;
+  const duration = sceneGraph?.duration ?? 0;
   const durationRef = useRef(duration);
   durationRef.current = duration;
 
@@ -153,7 +176,7 @@ export function Timeline() {
         lastTime = now;
         const nextPlayhead = playheadRef.current + delta;
 
-        if (nextPlayhead >= durationRef.current) {
+        if (durationRef.current > 0 && nextPlayhead >= durationRef.current) {
           dispatch(setPlayhead(0));
           dispatch(togglePlay());
           return;
@@ -293,7 +316,7 @@ export function Timeline() {
       </div>
     );
 
-  const visualMinutes = Math.max(10, Math.ceil(((duration || 180) + 60) / 60));
+  const visualMinutes = Math.max(5, Math.ceil(((duration > 0 ? duration : 60) + 60) / 60));
   const visualDuration = visualMinutes * 60;
 
   const formatTimecode = (totalSeconds: number) => {
@@ -364,7 +387,7 @@ export function Timeline() {
           <div className="text-xs font-mono font-medium text-slate-600 dark:text-slate-300">
             {formatTimecode(playhead)}{" "}
             <span className="text-slate-400 mx-1">|</span>{" "}
-            {formatTimecode(duration || 180)}
+            {formatTimecode(duration)}
           </div>
         </div>
       </div>

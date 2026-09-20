@@ -1,10 +1,20 @@
 import type { Asset, Clip, SceneGraph, Track } from "@/types";
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import { mediaManager } from "@/services/mediaManager";
+
+export interface UploadingItem {
+  tempId: string;
+  fileName: string;
+  progress: number;
+  status: 'uploading' | 'processing' | 'completed' | 'error';
+  error?: string;
+}
 
 export interface EditorState {
   activeProjectId: string | null;
   sceneGraph: SceneGraph | null;
   assets: Asset[];
+  uploadingAssets: Record<string, UploadingItem>;
   playhead: number;
   selectedClipId: string | null;
   isExporting: boolean;
@@ -22,6 +32,7 @@ const initialState: EditorState = {
   activeProjectId: null,
   sceneGraph: null,
   assets: [],
+  uploadingAssets: {},
   playhead: 0,
   selectedClipId: null,
   isExporting: false,
@@ -90,8 +101,8 @@ const editorSlice = createSlice({
             }
           }
         }
-        const effectiveDuration = maxClipEnd > 0 ? maxClipEnd : (state.sceneGraph.duration || 180);
-        if (state.playhead >= effectiveDuration - 0.2 || state.playhead >= (state.sceneGraph.duration || 180) - 0.2) {
+        const effectiveDuration = maxClipEnd > 0 ? maxClipEnd : (state.sceneGraph.duration ?? 0);
+        if (effectiveDuration > 0 && state.playhead >= effectiveDuration - 0.2) {
           state.playhead = 0;
         }
       }
@@ -100,6 +111,19 @@ const editorSlice = createSlice({
     setAssets: (state, action: PayloadAction<Asset[]>) => {
       state.assets = action.payload;
     },
+    setUploadProgress: (
+      state,
+      action: PayloadAction<UploadingItem>,
+    ) => {
+      state.uploadingAssets[action.payload.tempId] = action.payload;
+    },
+    removeUploadProgress: (state, action: PayloadAction<string>) => {
+      delete state.uploadingAssets[action.payload];
+    },
+    removeOptimisticAsset: (state, action: PayloadAction<string>) => {
+      state.assets = state.assets.filter((a) => a._id !== action.payload);
+      delete state.uploadingAssets[action.payload];
+    },
     addOptimisticAsset: (state, action: PayloadAction<Asset>) => {
       state.assets.unshift(action.payload);
     },
@@ -107,19 +131,31 @@ const editorSlice = createSlice({
       state,
       action: PayloadAction<{ tempId: string; realAsset: Asset }>,
     ) => {
+      delete state.uploadingAssets[action.payload.tempId];
+      mediaManager.aliasAssetKey(action.payload.tempId, action.payload.realAsset._id);
+      const existing = state.assets.find((a) => a._id === action.payload.tempId);
+      const localPreviewUrl = existing?.preview_url?.startsWith("blob:")
+        ? existing.preview_url
+        : undefined;
+
+      const mergedAsset: Asset = {
+        ...action.payload.realAsset,
+        preview_url: localPreviewUrl || action.payload.realAsset.preview_url || action.payload.realAsset.original_url,
+      };
+
       const idx = state.assets.findIndex((a) => a._id === action.payload.tempId);
       if (idx !== -1) {
-        state.assets[idx] = action.payload.realAsset;
+        state.assets[idx] = mergedAsset;
       } else {
-        const exists = state.assets.some((a) => a._id === action.payload.realAsset._id);
-        if (!exists) state.assets.unshift(action.payload.realAsset);
+        const exists = state.assets.some((a) => a._id === mergedAsset._id);
+        if (!exists) state.assets.unshift(mergedAsset);
       }
       if (state.sceneGraph) {
         for (const track of state.sceneGraph.tracks) {
           for (const clip of track.clips) {
             if (clip.assetId === action.payload.tempId || clip.asset._id === action.payload.tempId) {
-              clip.assetId = action.payload.realAsset._id;
-              clip.asset = action.payload.realAsset;
+              clip.assetId = mergedAsset._id;
+              clip.asset = mergedAsset;
             }
           }
         }
@@ -643,6 +679,9 @@ export const {
   redo,
   setProject,
   setAssets,
+  setUploadProgress,
+  removeUploadProgress,
+  removeOptimisticAsset,
   addOptimisticAsset,
   replaceOptimisticAsset,
   addAssetToTimeline,

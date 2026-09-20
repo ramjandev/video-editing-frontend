@@ -5,46 +5,116 @@ import type { Clip } from "@/types";
 import { getMediaUrl } from "@/lib/api";
 import { LayoutGrid } from "lucide-react";
 
+import { mediaManager } from "@/services/mediaManager";
+
 interface PlayerProps {
   zoomScale?: number;
 }
 
+interface MediaSeekTracker {
+  isSeeking: boolean;
+  pendingTime: number | null;
+  lastSeekTimestamp: number;
+  cleanup?: () => void;
+}
+
 export function Player({ zoomScale = 0.6 }: PlayerProps) {
   const dispatch = useAppDispatch();
-  const { sceneGraph } = useAppSelector(
-    (state) => state.editor
-  );
-  const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const { sceneGraph } = useAppSelector((state) => state.editor);
+  const videoRefs = useRef<Map<string, HTMLMediaElement>>(new Map());
+  const seekMapRef = useRef<Map<string, MediaSeekTracker>>(new Map());
+  const frameCacheRef = useRef<Map<string, Map<number, HTMLCanvasElement>>>(new Map());
+  const sampledClipsRef = useRef<Set<string>>(new Set());
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const reqRef = useRef<number>(0);
   const imageCache = useRef<Record<string, HTMLImageElement>>({});
 
-  useEffect(() => {
-    if (!sceneGraph) return;
-
-    sceneGraph.tracks.forEach((track) => {
-      track.clips.forEach((clip) => {
-        if (
-          (clip.asset.type === "video" || clip.asset.type === "audio") &&
-          !videoRefs.current.has(clip.id)
-        ) {
-          const isAudio = clip.asset.type === "audio";
-          const media = document.createElement(isAudio ? "audio" : "video");
-          const mediaUrl = getMediaUrl(clip.asset.preview_url || clip.asset.original_url);
-          media.src = mediaUrl;
-          if (mediaUrl.startsWith("http")) {
-            media.crossOrigin = "anonymous";
-          }
-          media.preload = "auto";
-          const isMuted = clip.muted || clip.volume === 0;
-          media.muted = isMuted;
-          media.volume = isMuted ? 0 : Math.min(1, Math.max(0, (clip.volume ?? 100) / 100));
-          videoRefs.current.set(clip.id, media as HTMLVideoElement);
+  const saveFrameSnapshot = (clipId: string, time: number, source: HTMLVideoElement) => {
+    if (!source || source.videoWidth === 0) return;
+    let clipMap = frameCacheRef.current.get(clipId);
+    if (!clipMap) {
+      clipMap = new Map();
+      frameCacheRef.current.set(clipId, clipMap);
+    }
+    const key = Math.round(time * 2) / 2; // 0.5s resolution
+    if (!clipMap.has(key) && clipMap.size < 300) {
+      try {
+        const offscreen = document.createElement("canvas");
+        offscreen.width = 480;
+        offscreen.height = 270;
+        const offCtx = offscreen.getContext("2d");
+        if (offCtx) {
+          offCtx.drawImage(source, 0, 0, offscreen.width, offscreen.height);
+          clipMap.set(key, offscreen);
         }
-      });
-    });
+      } catch {}
+    }
+  };
 
+  const triggerLocalPreSampling = (clipId: string, blobUrl: string, duration: number) => {
+    if (sampledClipsRef.current.has(clipId) || !blobUrl.startsWith("blob:")) return;
+    sampledClipsRef.current.add(clipId);
+
+    const offscreen = document.createElement("video");
+    offscreen.src = blobUrl;
+    offscreen.preload = "auto";
+    offscreen.muted = true;
+
+    const clipDuration = duration > 0 ? duration : 10;
+    const step = Math.max(1, clipDuration / 25);
+    let sampleSec = 0;
+
+    const sampleNext = () => {
+      if (sampleSec > clipDuration) {
+        offscreen.removeAttribute("src");
+        offscreen.load();
+        return;
+      }
+      offscreen.currentTime = sampleSec;
+    };
+
+    offscreen.addEventListener(
+      "loadeddata",
+      () => {
+        sampleNext();
+      },
+      { once: true }
+    );
+
+    offscreen.addEventListener("seeked", () => {
+      if (offscreen.videoWidth > 0) {
+        saveFrameSnapshot(clipId, sampleSec, offscreen);
+      }
+      sampleSec += step;
+      sampleNext();
+    });
+  };
+
+  const getClosestFrame = (clipId: string, targetTime: number): HTMLCanvasElement | null => {
+    const clipMap = frameCacheRef.current.get(clipId);
+    if (!clipMap || clipMap.size === 0) return null;
+
+    let closestCanvas: HTMLCanvasElement | null = null;
+    let minDiff = Infinity;
+
+    for (const [key, canvas] of clipMap.entries()) {
+      const diff = Math.abs(key - targetTime);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestCanvas = canvas;
+      }
+    }
+
+    return closestCanvas;
+  };
+
+  // Full unmount cleanup
+  useEffect(() => {
     return () => {
+      seekMapRef.current.forEach((tracker) => {
+        if (tracker.cleanup) tracker.cleanup();
+      });
+      seekMapRef.current.clear();
       videoRefs.current.forEach((video) => {
         video.pause();
         video.removeAttribute("src");
@@ -52,6 +122,119 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
       });
       videoRefs.current.clear();
     };
+  }, []);
+
+  useEffect(() => {
+    if (!sceneGraph) return;
+
+    const currentClipIds = new Set<string>();
+
+    sceneGraph.tracks.forEach((track) => {
+      track.clips.forEach((clip) => {
+        if (clip.asset.type === "video" || clip.asset.type === "audio") {
+          currentClipIds.add(clip.id);
+
+          const media = videoRefs.current.get(clip.id);
+          const isAudio = clip.asset.type === "audio";
+          const rawUrl = getMediaUrl(clip.asset.preview_url || clip.asset.original_url);
+
+          if (!media) {
+            const createdMedia = document.createElement(isAudio ? "audio" : "video");
+            const cachedBlobUrl = mediaManager.getCachedBlobUrlSync(clip.asset._id, rawUrl);
+            createdMedia.src = cachedBlobUrl || rawUrl;
+            if (createdMedia.src.startsWith("http")) {
+              createdMedia.crossOrigin = "anonymous";
+            }
+            createdMedia.preload = "auto";
+            const isMuted = clip.muted || clip.volume === 0;
+            createdMedia.muted = isMuted;
+            createdMedia.volume = isMuted ? 0 : Math.min(1, Math.max(0, (clip.volume ?? 100) / 100));
+
+            // Non-blocking seek tracker for continuous, instant scrubbing
+            const tracker: MediaSeekTracker = {
+              isSeeking: false,
+              pendingTime: null,
+              lastSeekTimestamp: 0,
+            };
+            seekMapRef.current.set(clip.id, tracker);
+
+            const performSeek = (time: number) => {
+              tracker.isSeeking = true;
+              tracker.lastSeekTimestamp = performance.now();
+              if ("fastSeek" in createdMedia && typeof (createdMedia as any).fastSeek === "function") {
+                try {
+                  (createdMedia as any).fastSeek(time);
+                } catch {
+                  createdMedia.currentTime = time;
+                }
+              } else {
+                createdMedia.currentTime = time;
+              }
+            };
+
+            const onSeeked = () => {
+              tracker.isSeeking = false;
+              if (createdMedia instanceof HTMLVideoElement) {
+                saveFrameSnapshot(clip.id, createdMedia.currentTime, createdMedia);
+              }
+
+              if (tracker.pendingTime !== null) {
+                const nextTime = tracker.pendingTime;
+                tracker.pendingTime = null;
+                if (Math.abs(createdMedia.currentTime - nextTime) > 0.02) {
+                  performSeek(nextTime);
+                }
+              }
+            };
+
+            createdMedia.addEventListener("seeked", onSeeked);
+            tracker.cleanup = () => createdMedia.removeEventListener("seeked", onSeeked);
+            videoRefs.current.set(clip.id, createdMedia);
+
+            // Fetch into local blob / IndexedDB in background
+            mediaManager.getOrLoadMediaBlobUrl(clip.asset._id, rawUrl).then((blobUrl) => {
+              if (blobUrl && createdMedia && createdMedia.src !== blobUrl) {
+                const currentPos = createdMedia.currentTime;
+                const wasPaused = createdMedia.paused;
+                createdMedia.src = blobUrl;
+                createdMedia.currentTime = currentPos;
+                if (!wasPaused) createdMedia.play().catch(() => {});
+
+                if (!isAudio) {
+                  triggerLocalPreSampling(
+                    clip.id,
+                    blobUrl,
+                    clip.asset.duration || clip.endTime - clip.startTime
+                  );
+                }
+              }
+            });
+
+            // If already cached locally, trigger pre-sampling right away
+            if (cachedBlobUrl && !isAudio) {
+              triggerLocalPreSampling(
+                clip.id,
+                cachedBlobUrl,
+                clip.asset.duration || clip.endTime - clip.startTime
+              );
+            }
+          }
+        }
+      });
+    });
+
+    // Clean up ONLY clips that were genuinely removed from the project
+    for (const [id, media] of videoRefs.current.entries()) {
+      if (!currentClipIds.has(id)) {
+        const tracker = seekMapRef.current.get(id);
+        if (tracker?.cleanup) tracker.cleanup();
+        seekMapRef.current.delete(id);
+        media.pause();
+        media.removeAttribute("src");
+        media.load();
+        videoRefs.current.delete(id);
+      }
+    }
   }, [sceneGraph]);
 
   useEffect(() => {
@@ -61,7 +244,6 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
     if (!ctx) return;
 
     const render = () => {
-
       const {
         playhead: currentPlayhead,
         isPlaying: currentIsPlaying,
@@ -99,15 +281,43 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
                 media.play().catch((err) => {
                   console.warn(`Media play failed for clip ${clip.id}:`, err);
                 });
-              } else if (Math.abs(media.currentTime - currentClipTime) > 0.35) {
+              } else if (Math.abs(media.currentTime - currentClipTime) > 1.5) {
+                // Only resync if drift is substantial (prevents infinite seek loops during playback)
                 media.currentTime = currentClipTime;
               }
             } else {
+              // SCRUBBING MODE: non-blocking seek queue with cadence throttle
               if (!media.paused) {
                 media.pause();
               }
-              if (Math.abs(media.currentTime - currentClipTime) > 0.05) {
-                media.currentTime = currentClipTime;
+              // Skip seeking audio while scrubbing to save decoder threads for video
+              if (clip.asset.type === "audio") return;
+
+              const tracker = seekMapRef.current.get(clip.id);
+              if (tracker) {
+                if (Math.abs(media.currentTime - currentClipTime) > 0.02) {
+                  const now = performance.now();
+                  if (media.seeking || tracker.isSeeking) {
+                    // Queue latest time without aborting the in-progress hardware decoder frame
+                    tracker.pendingTime = currentClipTime;
+                  } else {
+                    if (now - tracker.lastSeekTimestamp >= 25) {
+                      tracker.lastSeekTimestamp = now;
+                      tracker.isSeeking = true;
+                      if ("fastSeek" in media && typeof (media as any).fastSeek === "function") {
+                        try {
+                          (media as any).fastSeek(currentClipTime);
+                        } catch {
+                          media.currentTime = currentClipTime;
+                        }
+                      } else {
+                        media.currentTime = currentClipTime;
+                      }
+                    } else {
+                      tracker.pendingTime = currentClipTime;
+                    }
+                  }
+                }
               }
             }
           }
@@ -122,12 +332,12 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
       }
 
       const currentVideoClip = activeClips.find((c) => c.asset.type === "video");
-      const video = currentVideoClip ? videoRefs.current.get(currentVideoClip.id) : null;
+      const video = currentVideoClip ? (videoRefs.current.get(currentVideoClip.id) as HTMLVideoElement | undefined) : null;
 
       const isDark = document.documentElement.classList.contains("dark");
 
-      // Fill canvas background
-      ctx.fillStyle = isDark ? "#090d16" : "#ffffff";
+      // Fill canvas background with dark/black letterbox (NEVER white, to prevent blinding strobe flashes)
+      ctx.fillStyle = isDark ? "#090d16" : "#0f172a";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Render active clips from bottom track to top track
@@ -136,7 +346,10 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
 
         if (clip.asset.type === "video" && clip.id === currentVideoClip?.id && video) {
           try {
-            if (video.readyState >= 2) {
+            const currentClipTime = clip.trimIn + (currentPlayhead - clip.startTime);
+            const tracker = seekMapRef.current.get(clip.id);
+
+            if (video.videoWidth > 0) {
               const scale = Math.min(
                 canvas.width / video.videoWidth,
                 canvas.height / video.videoHeight
@@ -145,7 +358,19 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
               const h = video.videoHeight * scale;
               const x = (canvas.width - w) / 2;
               const y = (canvas.height - h) / 2;
-              ctx.drawImage(video, x, y, w, h);
+
+              // If scrubbing fast and we have a cached snapshot close to target time, show snapshot for instant feedback
+              const cached = tracker?.isSeeking ? getClosestFrame(clip.id, currentClipTime) : null;
+              if (cached) {
+                ctx.drawImage(cached, x, y, w, h);
+              } else {
+                // Always draw video element's latest frame — eliminates blank flashes
+                ctx.drawImage(video, x, y, w, h);
+              }
+
+              if (!tracker?.isSeeking && video.readyState >= 2) {
+                saveFrameSnapshot(clip.id, currentClipTime, video);
+              }
             }
           } catch (e) {
             console.error("Failed drawing video frame", e);

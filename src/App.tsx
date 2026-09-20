@@ -16,6 +16,7 @@ import { undo, redo, resetEditor } from "./store/editorSlice";
 import { openAuthModal, logout, fetchCurrentUser } from "./store/authSlice";
 import { toggleProjectManager, toggleAdminPanel, addToast } from "./store/uiSlice";
 import { renderWorker } from "./services/renderWorker";
+import { downloadMediaFile } from "./lib/utils";
 import {
   ArrowLeft,
   ZoomIn,
@@ -27,12 +28,20 @@ import {
   Shield,
   LogOut,
   Download,
+  Loader2,
 } from "lucide-react";
 
 function App() {
   const dispatch = useAppDispatch();
-  const { activeProjectId, sceneGraph, past, future } = useAppSelector((state) => state.editor);
+  const { activeProjectId, sceneGraph, past, future, exportUrl, uploadingAssets } = useAppSelector(
+    (state) => state.editor
+  );
   const { user, isAuthenticated } = useAppSelector((state) => state.auth);
+  const activeUploads = Object.values(uploadingAssets || {});
+  const isUploadingMedia = activeUploads.some(
+    (u) => u.status === "uploading" || u.status === "processing"
+  );
+  const uploadPercent = activeUploads.length > 0 ? activeUploads[0].progress : 0;
 
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem("theme");
@@ -91,6 +100,15 @@ function App() {
   }, [dispatch, sceneGraph, activeProjectId]);
 
   const handleExport = () => {
+    if (isUploadingMedia) {
+      dispatch(
+        addToast({
+          type: "warning",
+          message: "Please wait until your video finishes uploading before exporting.",
+        })
+      );
+      return;
+    }
     if (!sceneGraph || sceneGraph.tracks.every((t) => t.clips.length === 0)) {
       dispatch(addToast({ type: "warning", message: "Add some clips to the timeline before exporting." }));
       return;
@@ -244,10 +262,37 @@ function App() {
                 </button>
               )}
 
+              {/* Uploading indicator badge in top header */}
+              {isUploadingMedia && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 rounded-xl text-sky-600 dark:text-sky-300 text-xs font-medium animate-pulse shadow-xs">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-500" />
+                  <span>Uploading video ({uploadPercent}%)...</span>
+                </div>
+              )}
+
+              {/* Download Video button (when an export is ready) */}
+              {exportUrl && (
+                <button
+                  onClick={async () => {
+                    const filename = exportUrl.split("/").pop()?.split("?")[0] || `export_${Date.now()}.mp4`;
+                    dispatch(addToast({ type: "info", message: `Downloading "${filename}"...` }));
+                    await downloadMediaFile(exportUrl, filename);
+                  }}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                  title="Download Last Exported Video"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Video</span>
+                </button>
+              )}
+
               <button
                 onClick={handleExport}
-                className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-white font-semibold text-xs rounded-xl shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
-                title="Export & Render Video Project"
+                disabled={isUploadingMedia}
+                className={`px-4 py-2 bg-sky-500 hover:bg-sky-400 text-white font-semibold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 ${
+                  isUploadingMedia ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                }`}
+                title={isUploadingMedia ? "Waiting for video upload to complete..." : "Export & Render Video Project"}
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Export Video</span>
