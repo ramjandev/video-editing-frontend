@@ -10,7 +10,7 @@
  * 4. Feed frames to the encoder
  * 5. Finalize and upload the MP4 blob to the server
  */
-import { detectCapabilities, estimateRenderTimeSec, BROWSER_RENDER_THRESHOLD_SEC } from './browserCapabilities';
+import { detectCapabilities, estimateRenderTimeSec } from './browserCapabilities';
 import { WebCodecEncoder } from './webcodecEncoder';
 import { WasmEncoder } from './wasmEncoder';
 import { getMediaUrl, API_BASE } from '@/lib/api';
@@ -30,29 +30,26 @@ interface EncoderAdapter {
 }
 
 /**
- * Check if we can and should render in the browser.
- * Supports forceMode ('auto' | 'browser' | 'server') allowing the user to switch target.
+ * Check if we can render in the browser for targetMode ('browser' | 'server').
  */
 export async function canRenderInBrowser(
   sceneGraph: any,
-  forceMode: 'auto' | 'browser' | 'server' = 'auto',
+  targetMode: 'browser' | 'server' = 'server',
 ): Promise<{
   canRender: boolean;
   capabilities: BrowserCapabilities;
   estimatedSec: number;
   reason: string;
-  isAutoSelected: boolean;
 }> {
   const caps = await detectCapabilities();
   const estimatedSec = estimateRenderTimeSec(sceneGraph, caps);
 
-  if (forceMode === 'server') {
+  if (targetMode === 'server') {
     return {
       canRender: false,
       capabilities: caps,
       estimatedSec,
-      reason: 'User selected Server Engine',
-      isAutoSelected: false,
+      reason: 'User selected Cloud Server Engine',
     };
   }
 
@@ -61,29 +58,7 @@ export async function canRenderInBrowser(
       canRender: false,
       capabilities: caps,
       estimatedSec,
-      reason: 'No browser encoder available',
-      isAutoSelected: true,
-    };
-  }
-
-  if (forceMode === 'browser') {
-    return {
-      canRender: true,
-      capabilities: caps,
-      estimatedSec,
-      reason: 'User selected Browser Engine',
-      isAutoSelected: false,
-    };
-  }
-
-  // Default Auto mode (> 7 min => Server, < 7 min => Browser)
-  if (estimatedSec >= BROWSER_RENDER_THRESHOLD_SEC) {
-    return {
-      canRender: false,
-      capabilities: caps,
-      estimatedSec,
-      reason: `Estimated render time (${Math.ceil(estimatedSec / 60)} min) exceeds 7 min threshold`,
-      isAutoSelected: true,
+      reason: 'No in-browser encoder available in your browser',
     };
   }
 
@@ -91,8 +66,7 @@ export async function canRenderInBrowser(
     canRender: true,
     capabilities: caps,
     estimatedSec,
-    reason: `Estimated render time (${Math.ceil(estimatedSec)}s) < 7 min threshold`,
-    isAutoSelected: true,
+    reason: 'User selected Local Browser Engine',
   };
 }
 

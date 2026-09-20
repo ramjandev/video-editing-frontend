@@ -11,8 +11,8 @@ import { PropertiesPanel } from "./components/PropertiesPanel";
 import { ProjectManager } from "./components/ProjectManager";
 import { AdminPanel } from "./components/AdminPanel";
 import { useAppDispatch, useAppSelector } from "./store/hooks";
-import { loadAssets, createProject, exportVideo, triggerAutosave } from "./store/thunks";
-import { undo, redo, resetEditor } from "./store/editorSlice";
+import { loadAssets, createProject, triggerAutosave } from "./store/thunks";
+import { undo, redo, resetEditor, openExportModal } from "./store/editorSlice";
 import { openAuthModal, logout, fetchCurrentUser } from "./store/authSlice";
 import { toggleProjectManager, toggleAdminPanel, addToast } from "./store/uiSlice";
 import { renderWorker } from "./services/renderWorker";
@@ -113,7 +113,7 @@ function App() {
       dispatch(addToast({ type: "warning", message: "Add some clips to the timeline before exporting." }));
       return;
     }
-    dispatch(exportVideo());
+    dispatch(openExportModal());
   };
 
   const toggleTheme = () => {

@@ -17,13 +17,14 @@ export interface EditorState {
   uploadingAssets: Record<string, UploadingItem>;
   playhead: number;
   selectedClipId: string | null;
+  isExportModalOpen: boolean;
   isExporting: boolean;
   exportProgress: number;
   exportUrl: string | null;
   isPlaying: boolean;
   exportEta: number | null;
   exportStatus: string;
-  exportModePreference: 'auto' | 'browser' | 'server';
+  exportModePreference: 'browser' | 'server';
   // Undo/redo history
   past: SceneGraph[];
   future: SceneGraph[];
@@ -36,13 +37,14 @@ const initialState: EditorState = {
   uploadingAssets: {},
   playhead: 0,
   selectedClipId: null,
+  isExportModalOpen: false,
   isExporting: false,
   exportProgress: 0,
   exportUrl: null,
   isPlaying: false,
   exportEta: null,
   exportStatus: 'preparing',
-  exportModePreference: 'auto',
+  exportModePreference: 'server',
   past: [],
   future: [],
 };
@@ -638,9 +640,19 @@ const editorSlice = createSlice({
         }
       }
     },
+    openExportModal: (state) => {
+      state.isExportModalOpen = true;
+    },
+    closeExportModal: (state) => {
+      state.isExportModalOpen = false;
+      state.isExporting = false;
+      state.exportProgress = 0;
+      state.exportUrl = null;
+    },
     setExporting: (state, action: PayloadAction<boolean>) => {
       state.isExporting = action.payload;
       if (action.payload) {
+        state.isExportModalOpen = true;
         state.exportProgress = 0;
         state.exportUrl = null;
         state.exportEta = null;
@@ -658,7 +670,7 @@ const editorSlice = createSlice({
     setExportUrl: (state, action: PayloadAction<string | null>) => {
       state.exportUrl = action.payload;
     },
-    setExportModePreference: (state, action: PayloadAction<'auto' | 'browser' | 'server'>) => {
+    setExportModePreference: (state, action: PayloadAction<'browser' | 'server'>) => {
       state.exportModePreference = action.payload;
     },
     resetEditor: (state) => {
@@ -667,13 +679,14 @@ const editorSlice = createSlice({
       state.assets = [];
       state.playhead = 0;
       state.selectedClipId = null;
+      state.isExportModalOpen = false;
       state.isExporting = false;
       state.exportProgress = 0;
       state.exportUrl = null;
       state.isPlaying = false;
       state.exportEta = null;
       state.exportStatus = 'preparing';
-      state.exportModePreference = 'auto';
+      state.exportModePreference = 'server';
       state.past = [];
       state.future = [];
     },
@@ -701,6 +714,8 @@ export const {
   moveClip,
   setPlayhead,
   setSelectedClip,
+  openExportModal,
+  closeExportModal,
   setExporting,
   setExportProgress,
   setExportProgressDetails,
