@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { triggerAutosave, deleteAsset, uploadAsset } from "@/store/thunks";
 import { addAssetToTimeline, addOptimisticAsset, removeOptimisticAsset } from "@/store/editorSlice";
@@ -667,9 +668,9 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
       </div>
 
       {/* Professional Delete Warning Modal */}
-      {assetToDelete && (
+      {assetToDelete && typeof document !== "undefined" && createPortal(
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[120] flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-150"
           onClick={() => !isDeleting && setAssetToDelete(null)}
         >
           <div
@@ -769,7 +770,8 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
