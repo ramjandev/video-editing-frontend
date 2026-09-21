@@ -9,7 +9,7 @@ import { LayoutGrid } from "lucide-react";
 
 import { mediaManager } from "@/services/mediaManager";
 import { getAssetFrameSnapshots, saveAssetFrameSnapshots } from "@/services/indexedDbCache";
-import { drawClipToCanvas } from "@/services/elementRenderer";
+import { drawClipToCanvas, getSortedActiveClips } from "@/services/elementRenderer";
 
 interface PlayerProps {
   zoomScale?: number;
@@ -324,17 +324,10 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
         return;
       }
 
-      const activeClips: Clip[] = [];
-      for (const track of currentSceneGraph.tracks) {
-        const clip = track.clips.find(
-          (c) => currentPlayhead >= c.startTime && currentPlayhead <= c.endTime
-        );
-        if (clip) {
-          activeClips.push(clip);
-        }
-      }
+      // Find all active clips across all tracks for media playback and rendering
+      const activeClips = getSortedActiveClips(currentSceneGraph, currentPlayhead);
 
-      // Sync HTML video and audio elements smoothly
+      // 1. Sync HTML video and audio element playback & seek states
       activeClips.forEach((clip) => {
         if (clip.asset.type === "video" || clip.asset.type === "audio") {
           const media = videoRefs.current.get(clip.id);
@@ -385,6 +378,7 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
         }
       });
 
+      // Pause media elements that are no longer active
       for (const [id, video] of videoRefs.current.entries()) {
         const isActive = activeClips.some((c) => c.id === id);
         if (!isActive && !video.paused) {
@@ -392,11 +386,12 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
         }
       }
 
+      // 2. Clear canvas background
       const isDark = document.documentElement.classList.contains("dark");
       ctx.fillStyle = isDark ? "#090d16" : "#0f172a";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Map image elements for image clips
+      // 3. Map image elements for image clips
       const imageElementsMap = new Map<string, HTMLImageElement>();
       activeClips.forEach((c) => {
         if (c.asset.type === "image") {
@@ -417,8 +412,8 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
         }
       });
 
-      // Render active clips bottom-to-top using elementRenderer
-      [...activeClips].reverse().forEach((clip) => {
+      // 4. Render active clips using elementRenderer in Painter's algorithm order
+      activeClips.forEach((clip) => {
         if (clip.asset.type === "audio") return;
 
         if (clip.asset.type === "video") {

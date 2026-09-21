@@ -1,12 +1,45 @@
-import type { Clip } from "@/types";
+import type { Clip, SceneGraph } from "@/types";
 import { drawQRCode } from "./qrGenerator";
 
 /**
- * Unified Element Canvas Rendering Engine.
- * Renders all clip types (Video, Image, Text, QR Code, Shape, Slider) with exact
- * transforms (x, y, scale, rotation, opacity), styling, and animations.
- * Used by both Player.tsx preview canvas and browserExportEngine.ts video encoder.
+ * Get active clips at current playhead position sorted by Painter's Algorithm layer order.
+ * Ensures video/background tracks are rendered FIRST and text/annotations/shapes/QR are rendered LAST (ON TOP).
  */
+export function getSortedActiveClips(sceneGraph: SceneGraph | null | undefined, playhead: number): Clip[] {
+  if (!sceneGraph || !sceneGraph.tracks) return [];
+
+  const active: { clip: Clip; trackIndex: number }[] = [];
+
+  sceneGraph.tracks.forEach((track, trackIndex) => {
+    const clip = track.clips.find(
+      (c) => playhead >= c.startTime && playhead <= c.endTime
+    );
+    if (clip && clip.asset?.type !== "audio") {
+      active.push({ clip, trackIndex });
+    }
+  });
+
+  // Painter's Algorithm: Higher track index (bottom UI row) drawn first,
+  // lowest track index (track 0 - top UI row) drawn last (ON TOP OF EVERYTHING).
+  active.sort((a, b) => {
+    if (a.trackIndex !== b.trackIndex) {
+      return b.trackIndex - a.trackIndex;
+    }
+    const getPriority = (c: Clip) => {
+      const type = c.asset?.type;
+      if (type === "video") return 1;
+      if (type === "image") return 2;
+      if (type === "slider") return 3;
+      if (type === "shape") return 4;
+      if (type === "qr") return 5;
+      if (type === "text") return 6;
+      return 3;
+    };
+    return getPriority(a.clip) - getPriority(b.clip);
+  });
+
+  return active.map((item) => item.clip);
+}
 
 export interface RenderContextMedia {
   videoElements?: Map<string, HTMLMediaElement | HTMLVideoElement>;
