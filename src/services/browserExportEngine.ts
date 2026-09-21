@@ -165,8 +165,7 @@ export async function exportInBrowser(
       // Find active clips sorted by Painter's Algorithm layer priority
       const activeClips = getSortedActiveClips(sceneGraph, currentTime);
 
-      // Synchronize video seeking ONLY when position changes significantly (not every frame)
-      // This is the critical fix: only seek when we jump more than 1 frame (~33ms)
+      // Synchronize video seeking with fast 30ms non-blocking fallback to keep GPU encoder active
       const videoClips = activeClips.filter((c: any) => c.asset?.type === 'video');
       const seekNeeded: Promise<void>[] = [];
 
@@ -175,30 +174,42 @@ export async function exportInBrowser(
         if (vid && vid.readyState >= 2) {
           const targetTime = (clip.trimIn || 0) + (currentTime - clip.startTime);
           const lastTime = videoCurrentTimes.get(clip.id) ?? -999;
-          // Only seek if we've jumped more than 2 frames (handles non-sequential seeks)
-          const frameDelta = Math.abs(targetTime - lastTime);
-          const expectedDelta = 1 / fps;
-          if (frameDelta > expectedDelta * 2.5) {
-            // Non-sequential: must seek and wait (keyframe jump)
-            seekNeeded.push(new Promise<void>((resolve) => {
-              const timeout = setTimeout(resolve, 200); // max 200ms wait
-              vid.addEventListener('seeked', () => { clearTimeout(timeout); resolve(); }, { once: true });
-              vid.currentTime = targetTime;
-            }));
-          } else {
-            // Sequential frame: browser advances naturally, no seek needed
-            videoCurrentTimes.set(clip.id, targetTime);
+          const delta = Math.abs(targetTime - lastTime);
+
+          // Only seek if time delta is greater than ~40ms
+          if (delta > 0.04 && Math.abs(vid.currentTime - targetTime) > 0.04) {
+            seekNeeded.push(
+              new Promise<void>((resolve) => {
+                let done = false;
+                const finish = () => {
+                  if (!done) {
+                    done = true;
+                    resolve();
+                  }
+                };
+                const timeout = setTimeout(finish, 30);
+                vid.addEventListener(
+                  'seeked',
+                  () => {
+                    clearTimeout(timeout);
+                    finish();
+                  },
+                  { once: true }
+                );
+                try {
+                  vid.currentTime = targetTime;
+                } catch {
+                  finish();
+                }
+              })
+            );
           }
+          videoCurrentTimes.set(clip.id, targetTime);
         }
       }
 
       if (seekNeeded.length > 0) {
         await Promise.all(seekNeeded);
-        // Update tracked times after seeks
-        for (const clip of videoClips) {
-          const vid = videoElements.get(clip.assetId) || videoElements.get(clip.id);
-          if (vid) videoCurrentTimes.set(clip.id, vid.currentTime);
-        }
       }
 
       // Draw all clips in painter's order (video first, text last on top)

@@ -103,7 +103,6 @@ export class WebCodecEncoder {
         height: this.options.height,
         bitrate: this.options.bitrate,
         framerate: this.options.fps,
-        latencyMode: 'realtime', // 'realtime' maximizes throughput; 'quality' throttles GPU pipeline
         avc: { format: 'avc' },
       });
     } catch (err: any) {
