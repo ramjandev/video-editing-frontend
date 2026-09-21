@@ -159,6 +159,8 @@ export async function exportInBrowser(
 
     // 4. Render frame-by-frame
     const startTime = performance.now();
+    // Track which video is currently seeked to what time (avoid re-seeking same position)
+    const videoCurrentTimes = new Map<string, number>();
 
     for (let frame = 0; frame < totalFrames; frame++) {
       if (currentId !== activeExportId) {
@@ -174,9 +176,43 @@ export async function exportInBrowser(
       // Find active clips sorted by Painter's Algorithm layer priority
       const activeClips = getSortedActiveClips(sceneGraph, currentTime);
 
-      // Synchronize video seeking before drawing to eliminate text blinking
-      await syncVideoElements(activeClips, currentTime, videoElements);
+      // Synchronize video seeking ONLY when position changes significantly (not every frame)
+      // This is the critical fix: only seek when we jump more than 1 frame (~33ms)
+      const videoClips = activeClips.filter((c: any) => c.asset?.type === 'video');
+      const seekNeeded: Promise<void>[] = [];
 
+      for (const clip of videoClips) {
+        const vid = videoElements.get(clip.assetId) || videoElements.get(clip.id);
+        if (vid && vid.readyState >= 2) {
+          const targetTime = (clip.trimIn || 0) + (currentTime - clip.startTime);
+          const lastTime = videoCurrentTimes.get(clip.id) ?? -999;
+          // Only seek if we've jumped more than 2 frames (handles non-sequential seeks)
+          const frameDelta = Math.abs(targetTime - lastTime);
+          const expectedDelta = 1 / fps;
+          if (frameDelta > expectedDelta * 2.5) {
+            // Non-sequential: must seek and wait (keyframe jump)
+            seekNeeded.push(new Promise<void>((resolve) => {
+              const timeout = setTimeout(resolve, 200); // max 200ms wait
+              vid.addEventListener('seeked', () => { clearTimeout(timeout); resolve(); }, { once: true });
+              vid.currentTime = targetTime;
+            }));
+          } else {
+            // Sequential frame: browser advances naturally, no seek needed
+            videoCurrentTimes.set(clip.id, targetTime);
+          }
+        }
+      }
+
+      if (seekNeeded.length > 0) {
+        await Promise.all(seekNeeded);
+        // Update tracked times after seeks
+        for (const clip of videoClips) {
+          const vid = videoElements.get(clip.assetId) || videoElements.get(clip.id);
+          if (vid) videoCurrentTimes.set(clip.id, vid.currentTime);
+        }
+      }
+
+      // Draw all clips in painter's order (video first, text last on top)
       for (const clip of activeClips) {
         drawClip(ctx, clip, currentTime, width, height, videoElements);
       }
@@ -193,9 +229,10 @@ export async function exportInBrowser(
       const renderPercent = Math.round(5 + (frame / totalFrames) * 80);
       callbacks.onProgress(renderPercent, `Rendering frame ${frame + 1}/${totalFrames} (${encoderName})`, etaSec);
 
-      // High-speed yield to main thread every 10 frames to unthrottle GPU hardware pipeline
-      if (frame % 10 === 0) {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
+      // Yield to GPU pipeline every 20 frames (not every 10 — less overhead)
+      // Use Promise.resolve() microtask instead of requestAnimationFrame (faster, no vsync lock)
+      if (frame % 20 === 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
     }
 
@@ -262,53 +299,8 @@ async function preloadAssets(sceneGraph: any): Promise<Map<string, HTMLVideoElem
 
 import { drawClipToCanvas, getSortedActiveClips } from './elementRenderer';
 
-async function syncVideoElements(
-  activeClips: any[],
-  currentTime: number,
-  videoElements: Map<string, HTMLVideoElement>,
-): Promise<void> {
-  const seekPromises: Promise<void>[] = [];
 
-  for (const clip of activeClips) {
-    if (clip.asset?.type === 'video') {
-      const vid = videoElements.get(clip.assetId) || videoElements.get(clip.id);
-      if (vid && vid.readyState >= 2) {
-        const targetTime = (clip.trimIn || 0) + (currentTime - clip.startTime);
-        if (Math.abs(vid.currentTime - targetTime) > 0.03) {
-          seekPromises.push(
-            new Promise<void>((resolve) => {
-              let timeout: any = null;
-              const onSeeked = () => {
-                clearTimeout(timeout);
-                vid.removeEventListener('seeked', onSeeked);
-                resolve();
-              };
-              vid.addEventListener('seeked', onSeeked, { once: true });
-              timeout = setTimeout(() => {
-                vid.removeEventListener('seeked', onSeeked);
-                resolve();
-              }, 40); // 40ms max frame seek timeout
-              try {
-                if ('fastSeek' in vid && typeof (vid as any).fastSeek === 'function') {
-                  (vid as any).fastSeek(targetTime);
-                } else {
-                  vid.currentTime = targetTime;
-                }
-              } catch {
-                vid.currentTime = targetTime;
-                resolve();
-              }
-            }),
-          );
-        }
-      }
-    }
-  }
 
-  if (seekPromises.length > 0) {
-    await Promise.all(seekPromises);
-  }
-}
 
 function drawClip(
   ctx: CanvasRenderingContext2D,

@@ -103,7 +103,7 @@ export class WebCodecEncoder {
         height: this.options.height,
         bitrate: this.options.bitrate,
         framerate: this.options.fps,
-        latencyMode: 'quality',
+        latencyMode: 'realtime', // 'realtime' maximizes throughput; 'quality' throttles GPU pipeline
         avc: { format: 'avc' },
       });
     } catch (err: any) {
@@ -130,7 +130,8 @@ export class WebCodecEncoder {
       duration,
     });
 
-    const isKeyFrame = this.frameIndex % (this.options.fps * 2) === 0;
+    // Keyframe every 5 seconds (150 frames at 30fps) — fewer I-frames = faster encoding
+    const isKeyFrame = this.frameIndex % (this.options.fps * 5) === 0;
 
     try {
       this.encoder.encode(frame, { keyFrame: isKeyFrame });
@@ -147,21 +148,23 @@ export class WebCodecEncoder {
     const percent = Math.round((this.frameIndex / this.totalFrames) * 90);
     this.options.onProgress(percent);
 
-    // Backpressure queue wait
-    if (this.encoder && this.encoder.encodeQueueSize > 8) {
+    // Backpressure: if encoder queue is full, yield until drained
+    // Use microtask loop (queueMicrotask) instead of setTimeout to avoid 15.6ms OS timer overhead
+    if (this.encoder && this.encoder.encodeQueueSize > 10) {
       await new Promise<void>((resolve, reject) => {
-        const check = () => {
+        const drain = () => {
           if (this.lastError) return reject(this.lastError);
           if (!this.encoder || (this.encoder.state as string) === 'closed') {
-            return reject(new Error('VideoEncoder closed during queue wait.'));
+            return reject(new Error('VideoEncoder closed during queue drain.'));
           }
-          if (this.encoder.encodeQueueSize <= 2) {
+          if (this.encoder.encodeQueueSize <= 3) {
             resolve();
           } else {
-            setTimeout(check, 2);
+            // Use rAF instead of setTimeout — fires as soon as GPU is ready, not on 15.6ms OS tick
+            requestAnimationFrame(drain);
           }
         };
-        check();
+        requestAnimationFrame(drain);
       });
     }
   }

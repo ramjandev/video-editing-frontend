@@ -421,10 +421,27 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
           const tracker = seekMapRef.current.get(clip.id);
           const currentClipTime = clip.trimIn + (currentPlayhead - clip.startTime);
           const video = videoRefs.current.get(clip.id) as HTMLVideoElement | undefined;
-          if (video && !tracker?.isSeeking && video.readyState >= 2) {
+
+          if (tracker?.isSeeking) {
+            // Video is seeking — draw the nearest cached frame snapshot to prevent flicker
+            const cachedFrame = getClosestFrame(assetKey, currentClipTime);
+            if (cachedFrame) {
+              ctx.save();
+              const cw = canvas.width;
+              const ch = canvas.height;
+              const sw = (cachedFrame as HTMLCanvasElement).width || cw;
+              const sh = (cachedFrame as HTMLCanvasElement).height || ch;
+              const scale = Math.min(cw / sw, ch / sh);
+              const dw = sw * scale;
+              const dh = sh * scale;
+              const dx = (cw - dw) / 2;
+              const dy = (ch - dh) / 2;
+              ctx.drawImage(cachedFrame as CanvasImageSource, dx, dy, dw, dh);
+              ctx.restore();
+              return; // skip drawClipToCanvas for this video — already painted the cached frame
+            }
+          } else if (video && video.readyState >= 2) {
             saveFrameSnapshot(assetKey, currentClipTime, video);
-          } else if (tracker?.isSeeking) {
-            getClosestFrame(assetKey, currentClipTime);
           }
         }
 
