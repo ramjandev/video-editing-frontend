@@ -20,12 +20,17 @@ export class WebCodecEncoder {
   private totalFrames = 0;
   private options: Required<WebCodecEncoderOptions>;
   private encodedFrameCount = 0;
+  private lastError: Error | null = null;
 
   constructor(opts: WebCodecEncoderOptions) {
+    // Force even numbers for width and height (required by hardware H.264 encoders)
+    const width = Math.floor((opts.width || 1280) / 2) * 2;
+    const height = Math.floor((opts.height || 720) / 2) * 2;
+
     this.options = {
-      width: opts.width,
-      height: opts.height,
-      fps: opts.fps,
+      width: Math.max(16, width),
+      height: Math.max(16, height),
+      fps: opts.fps || 30,
       bitrate: opts.bitrate || 4_000_000,
       onProgress: opts.onProgress || (() => {}),
     };
@@ -35,6 +40,7 @@ export class WebCodecEncoder {
     this.totalFrames = totalFrames;
     this.frameIndex = 0;
     this.encodedFrameCount = 0;
+    this.lastError = null;
 
     this.muxer = new Muxer({
       target: new ArrayBufferTarget(),
@@ -48,58 +54,111 @@ export class WebCodecEncoder {
 
     const muxer = this.muxer;
 
+    // Detect best GPU-supported codec candidate
+    const candidateCodecs = [
+      'avc1.64002a', // High Profile Level 4.2
+      'avc1.4d402a', // Main Profile Level 4.2
+      'avc1.4d401f', // Main Profile Level 3.1
+      'avc1.42e01f', // Constrained Baseline Level 3.1
+      'avc1.42001f', // Baseline Level 3.1
+    ];
+
+    let selectedCodec = 'avc1.4d402a';
+
+    if (typeof VideoEncoder !== 'undefined' && typeof (VideoEncoder as any).isConfigSupported === 'function') {
+      for (const candidate of candidateCodecs) {
+        try {
+          const support = await (VideoEncoder as any).isConfigSupported({
+            codec: candidate,
+            width: this.options.width,
+            height: this.options.height,
+            bitrate: this.options.bitrate,
+            framerate: this.options.fps,
+          });
+          if (support && support.supported) {
+            selectedCodec = candidate;
+            break;
+          }
+        } catch {}
+      }
+    }
+
     this.encoder = new VideoEncoder({
       output: (chunk, meta) => {
-        muxer.addVideoChunk(chunk, meta ?? undefined);
-        this.encodedFrameCount++;
+        if (muxer) {
+          muxer.addVideoChunk(chunk, meta ?? undefined);
+          this.encodedFrameCount++;
+        }
       },
       error: (e) => {
-        console.error('[WebCodecEncoder] Encoder error:', e);
+        console.error('[WebCodecEncoder] Encoder hardware error:', e);
+        this.lastError = e instanceof Error ? e : new Error(String((e as any)?.message || e));
       },
     });
 
-    this.encoder.configure({
-      codec: 'avc1.42001f', // H.264 Baseline Level 3.1
-      width: this.options.width,
-      height: this.options.height,
-      bitrate: this.options.bitrate,
-      framerate: this.options.fps,
-      latencyMode: 'quality',
-      avc: { format: 'avc' },
-    });
+    try {
+      this.encoder.configure({
+        codec: selectedCodec,
+        width: this.options.width,
+        height: this.options.height,
+        bitrate: this.options.bitrate,
+        framerate: this.options.fps,
+        latencyMode: 'quality',
+        avc: { format: 'avc' },
+      });
+    } catch (err: any) {
+      this.lastError = err instanceof Error ? err : new Error(String(err));
+      throw this.lastError;
+    }
   }
 
   async addFrame(canvas: HTMLCanvasElement): Promise<void> {
-    if (!this.encoder || this.encoder.state === 'closed') return;
+    if (this.lastError) {
+      throw this.lastError;
+    }
 
-    const timestamp = (this.frameIndex / this.options.fps) * 1_000_000; // microseconds
-    const duration = (1 / this.options.fps) * 1_000_000;
+    if (!this.encoder || (this.encoder.state as string) === 'closed') {
+      if (this.lastError) throw this.lastError;
+      throw new Error('VideoEncoder was closed unexpectedly during frame encoding.');
+    }
+
+    const timestamp = Math.round((this.frameIndex / this.options.fps) * 1_000_000); // microseconds
+    const duration = Math.round((1 / this.options.fps) * 1_000_000);
 
     const frame = new VideoFrame(canvas, {
       timestamp,
       duration,
     });
 
-    // Insert keyframe every 2 seconds
     const isKeyFrame = this.frameIndex % (this.options.fps * 2) === 0;
 
-    this.encoder.encode(frame, { keyFrame: isKeyFrame });
-    frame.close();
+    try {
+      this.encoder.encode(frame, { keyFrame: isKeyFrame });
+    } catch (err: any) {
+      frame.close();
+      this.lastError = err instanceof Error ? err : new Error(String(err));
+      throw this.lastError;
+    } finally {
+      frame.close();
+    }
 
     this.frameIndex++;
 
-    // Report progress
     const percent = Math.round((this.frameIndex / this.totalFrames) * 90);
     this.options.onProgress(percent);
 
-    // Backpressure: if encoder queue is building up, wait
-    if (this.encoder.encodeQueueSize > 5) {
-      await new Promise<void>((resolve) => {
+    // Backpressure queue wait
+    if (this.encoder && this.encoder.encodeQueueSize > 8) {
+      await new Promise<void>((resolve, reject) => {
         const check = () => {
-          if (!this.encoder || this.encoder.encodeQueueSize <= 2) {
+          if (this.lastError) return reject(this.lastError);
+          if (!this.encoder || (this.encoder.state as string) === 'closed') {
+            return reject(new Error('VideoEncoder closed during queue wait.'));
+          }
+          if (this.encoder.encodeQueueSize <= 2) {
             resolve();
           } else {
-            setTimeout(check, 1);
+            setTimeout(check, 2);
           }
         };
         check();
@@ -108,13 +167,25 @@ export class WebCodecEncoder {
   }
 
   async finalize(): Promise<Blob> {
+    if (this.lastError) {
+      throw this.lastError;
+    }
+
     if (!this.encoder || !this.muxer) {
       throw new Error('Encoder not initialized');
     }
 
-    // Flush remaining frames
+    if ((this.encoder.state as string) === 'closed') {
+      if (this.lastError) throw this.lastError;
+      throw new Error('VideoEncoder is closed and cannot flush remaining frames.');
+    }
+
+    // Flush remaining frames safely
     await this.encoder.flush();
-    this.encoder.close();
+
+    if ((this.encoder.state as string) !== 'closed') {
+      this.encoder.close();
+    }
 
     // Finalize MP4
     this.muxer.finalize();
@@ -126,10 +197,13 @@ export class WebCodecEncoder {
   }
 
   destroy(): void {
-    if (this.encoder && this.encoder.state !== 'closed') {
-      try { this.encoder.close(); } catch {}
+    if (this.encoder && (this.encoder.state as string) !== 'closed') {
+      try {
+        this.encoder.close();
+      } catch {}
     }
     this.encoder = null;
     this.muxer = null;
+    this.lastError = null;
   }
 }

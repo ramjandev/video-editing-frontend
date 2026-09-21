@@ -93,8 +93,10 @@ export async function exportInBrowser(
   const fps = sceneGraph.fps || 30;
   const duration = sceneGraph.duration || 10;
   const totalFrames = Math.ceil(duration * fps);
-  const width = sceneGraph.resolution?.w || 1280;
-  const height = sceneGraph.resolution?.h || 720;
+  const rawWidth = sceneGraph.resolution?.w || 1280;
+  const rawHeight = sceneGraph.resolution?.h || 720;
+  const width = Math.floor(rawWidth / 2) * 2;
+  const height = Math.floor(rawHeight / 2) * 2;
 
   let encoderName = '';
   let encoder: EncoderAdapter;
