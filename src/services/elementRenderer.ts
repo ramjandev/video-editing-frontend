@@ -11,31 +11,36 @@ export function getSortedActiveClips(sceneGraph: SceneGraph | null | undefined, 
   const active: { clip: Clip; trackIndex: number }[] = [];
 
   sceneGraph.tracks.forEach((track, trackIndex) => {
-    const clip = track.clips.find(
-      (c) => playhead >= c.startTime && playhead <= c.endTime
+    const matchingClips = track.clips.filter(
+      (c) => playhead >= c.startTime && playhead <= c.endTime && c.asset?.type !== "audio"
     );
-    if (clip && clip.asset?.type !== "audio") {
+    matchingClips.forEach((clip) => {
       active.push({ clip, trackIndex });
-    }
+    });
   });
 
-  // Painter's Algorithm: Higher track index (bottom UI row) drawn first,
-  // lowest track index (track 0 - top UI row) drawn last (ON TOP OF EVERYTHING).
+  const getPriority = (c: Clip) => {
+    const type = c.asset?.type;
+    if (type === "video") return 10;
+    if (type === "image") return 20;
+    if (type === "slider") return 30;
+    if (type === "shape") return 40;
+    if (type === "qr") return 50;
+    if (type === "text") return 60;
+    return 30;
+  };
+
+  // Painter's Algorithm: Lower priority (Video: 10) drawn FIRST (Background),
+  // Higher priority (Text: 60) drawn LAST (Foreground - ON TOP OF EVERYTHING).
   active.sort((a, b) => {
-    if (a.trackIndex !== b.trackIndex) {
-      return b.trackIndex - a.trackIndex;
+    const prioA = getPriority(a.clip);
+    const prioB = getPriority(b.clip);
+
+    if (prioA !== prioB) {
+      return prioA - prioB;
     }
-    const getPriority = (c: Clip) => {
-      const type = c.asset?.type;
-      if (type === "video") return 1;
-      if (type === "image") return 2;
-      if (type === "slider") return 3;
-      if (type === "shape") return 4;
-      if (type === "qr") return 5;
-      if (type === "text") return 6;
-      return 3;
-    };
-    return getPriority(a.clip) - getPriority(b.clip);
+
+    return b.trackIndex - a.trackIndex;
   });
 
   return active.map((item) => item.clip);

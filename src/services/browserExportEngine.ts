@@ -171,8 +171,8 @@ export async function exportInBrowser(
       ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, width, height);
 
-      // Find active clips
-      const activeClips = findActiveClips(sceneGraph, currentTime);
+      // Find active clips sorted by Painter's Algorithm layer priority
+      const activeClips = getSortedActiveClips(sceneGraph, currentTime);
 
       // Synchronize video seeking before drawing to eliminate text blinking
       await syncVideoElements(activeClips, currentTime, videoElements);
@@ -258,20 +258,9 @@ async function preloadAssets(sceneGraph: any): Promise<Map<string, HTMLVideoElem
   return videoElements;
 }
 
-function findActiveClips(sceneGraph: any, currentTime: number): any[] {
-  const active: any[] = [];
-  for (const track of sceneGraph.tracks || []) {
-    for (const clip of track.clips || []) {
-      if (currentTime >= clip.startTime && currentTime <= clip.endTime) {
-        active.push(clip);
-      }
-    }
-  }
-  // Reverse so bottom tracks render first (painters algorithm)
-  return active.reverse();
-}
 
-import { drawClipToCanvas } from './elementRenderer';
+
+import { drawClipToCanvas, getSortedActiveClips } from './elementRenderer';
 
 async function syncVideoElements(
   activeClips: any[],
