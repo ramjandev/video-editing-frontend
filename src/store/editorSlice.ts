@@ -48,9 +48,33 @@ const initialState: EditorState = {
   past: [],
   future: [],
 };
+// Utility function to normalize track layers so overlay tracks (text, shape, qr, slider, annotations) stay on top of video tracks
+const normalizeTrackLayers = (sceneGraph: SceneGraph) => {
+  if (!sceneGraph || !sceneGraph.tracks) return;
+  const overlayTracks: Track[] = [];
+  const videoTracks: Track[] = [];
+  const audioTracks: Track[] = [];
+
+  for (const track of sceneGraph.tracks) {
+    const hasOverlayClips = track.clips.some((c) =>
+      ["text", "qr", "shape", "slider"].includes(c.asset.type)
+    );
+    if (track.type === "audio") {
+      audioTracks.push(track);
+    } else if (hasOverlayClips || track.type === "text") {
+      overlayTracks.push(track);
+    } else {
+      videoTracks.push(track);
+    }
+  }
+
+  sceneGraph.tracks = [...overlayTracks, ...videoTracks, ...audioTracks];
+};
+
 // Utility function to recalculate project duration based on clips in the scene graph
 const recalculateDuration = (state: EditorState) => {
   if (!state.sceneGraph) return;
+  normalizeTrackLayers(state.sceneGraph);
   let maxEndTime = 0; // Minimum duration is 0
   for (const track of state.sceneGraph.tracks) {
     for (const clip of track.clips) {
@@ -188,30 +212,10 @@ const editorSlice = createSlice({
       snapshotHistory(state);
 
       const { asset } = action.payload;
-      const startTime = action.payload.startTime ?? 0;
+      const startTime = action.payload.startTime ?? state.playhead;
       const isAudio = asset.type === "audio";
-      const targetType = isAudio ? "audio" : "video";
-
-      // 1. Find target track matching targetType
-      let track = state.sceneGraph.tracks.find((t) =>
-        action.payload.trackId ? t.id === action.payload.trackId && t.type === targetType : t.type === targetType
-      );
-
-      // Fallback: search for any track matching targetType if requested trackId didn't match type
-      if (!track) {
-        track = state.sceneGraph.tracks.find((t) => t.type === targetType);
-      }
-
-      // If no track of targetType exists, create a new track of targetType
-      if (!track) {
-        const newTrackId = `track_${targetType}_${Date.now()}`;
-        track = {
-          id: newTrackId,
-          type: targetType,
-          clips: [],
-        };
-        state.sceneGraph.tracks.push(track);
-      }
+      const isOverlay = ["text", "qr", "shape", "slider"].includes(asset.type);
+      const targetType = isAudio ? "audio" : isOverlay ? "text" : "video";
 
       const clipDuration = asset.duration || 5;
       const newClip: Clip = {
@@ -224,29 +228,41 @@ const editorSlice = createSlice({
         trimOut: clipDuration,
       };
 
-      // Collision detection for insertion
-      let finalStartTime = startTime;
-      let finalEndTime = newClip.endTime;
+      let targetTrack: Track | undefined;
 
-      const hasOverlap = track.clips.some(
-        (c) =>
-          (finalStartTime >= c.startTime && finalStartTime < c.endTime) ||
-          (finalEndTime > c.startTime && finalEndTime <= c.endTime) ||
-          (finalStartTime <= c.startTime && finalEndTime >= c.endTime),
-      );
-
-      if (hasOverlap) {
-        const maxEndTime = track.clips.reduce(
-          (max, c) => Math.max(max, c.endTime),
-          0,
-        );
-        finalStartTime = maxEndTime;
-        finalEndTime = finalStartTime + clipDuration;
-        newClip.startTime = finalStartTime;
-        newClip.endTime = finalEndTime;
+      if (action.payload.trackId) {
+        targetTrack = state.sceneGraph.tracks.find((t) => t.id === action.payload.trackId);
       }
 
-      track.clips.push(newClip);
+      if (!targetTrack) {
+        targetTrack = state.sceneGraph.tracks.find((t) => {
+          if (t.type !== targetType && !(isOverlay && t.type === "text")) return false;
+          const collision = t.clips.some(
+            (c) =>
+              (startTime >= c.startTime && startTime < c.endTime) ||
+              (startTime + clipDuration > c.startTime && startTime + clipDuration <= c.endTime) ||
+              (startTime <= c.startTime && startTime + clipDuration >= c.endTime)
+          );
+          return !collision;
+        });
+      }
+
+      if (!targetTrack) {
+        const newTrackId = `track_${targetType}_${Date.now()}`;
+        targetTrack = {
+          id: newTrackId,
+          type: targetType,
+          clips: [],
+        };
+        if (isOverlay) {
+          state.sceneGraph.tracks.unshift(targetTrack);
+        } else {
+          state.sceneGraph.tracks.push(targetTrack);
+        }
+      }
+
+      targetTrack.clips.push(newClip);
+      state.selectedClipId = newClip.id;
       recalculateDuration(state);
     },
     updateClip: (
