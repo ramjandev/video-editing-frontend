@@ -102,6 +102,9 @@ export async function exportInBrowser(
   let encoder: EncoderAdapter;
 
   // Select encoder based on capabilities
+  // NOTE: Do NOT pass onProgress to encoder — the frame loop below handles all progress
+  // reporting with accurate ETA. The encoder's internal onProgress caused ETA to flicker
+  // null on every single frame (overwriting the frame loop's ETA value).
   if (caps.hasWebCodecs) {
     encoderName = 'WebCodecs H.264';
     encoder = new WebCodecEncoder({
@@ -109,11 +112,6 @@ export async function exportInBrowser(
       height,
       fps,
       bitrate: 4_000_000,
-      onProgress: (p) => {
-        if (currentId === activeExportId) {
-          callbacks.onProgress(p, `Encoding with ${encoderName}...`, null);
-        }
-      },
     });
   } else if (caps.hasWasm && caps.hasSharedArrayBuffer) {
     encoderName = 'ffmpeg.wasm (WASM)';
@@ -122,21 +120,12 @@ export async function exportInBrowser(
       height,
       fps,
       bitrate: 4_000_000,
-      onProgress: (p) => {
-        if (currentId === activeExportId) {
-          callbacks.onProgress(p, `Encoding with ${encoderName}...`, null);
-        }
-      },
       onLog: (msg) => console.log('[WasmEncoder]', msg),
     });
   } else {
     // MediaRecorder fallback — produces WebM, not MP4
     encoderName = 'MediaRecorder (WebM)';
-    encoder = createMediaRecorderAdapter(width, height, fps, (p) => {
-      if (currentId === activeExportId) {
-        callbacks.onProgress(p, `Encoding with ${encoderName}...`, null);
-      }
-    });
+    encoder = createMediaRecorderAdapter(width, height, fps);
   }
 
   callbacks.onProgress(2, `Initializing ${encoderName} encoder...`, null);
@@ -220,14 +209,16 @@ export async function exportInBrowser(
       // Feed frame to hardware encoder
       await encoder.addFrame(canvas);
 
-      // Calculate rolling ETA & progress
-      const elapsed = (performance.now() - startTime) / 1000;
-      const rollingFps = (frame + 1) / elapsed;
-      const remainingFrames = totalFrames - frame - 1;
-      const etaSec = rollingFps > 0 ? Math.ceil(remainingFrames / rollingFps) : null;
+      // Calculate rolling ETA & progress (update UI every 5 frames to keep React rendering silky-smooth)
+      if (frame % 5 === 0 || frame === totalFrames - 1) {
+        const elapsed = (performance.now() - startTime) / 1000;
+        const rollingFps = (frame + 1) / elapsed;
+        const remainingFrames = totalFrames - frame - 1;
+        const etaSec = rollingFps > 0 ? Math.ceil(remainingFrames / rollingFps) : null;
+        const renderPercent = Math.round(5 + (frame / totalFrames) * 80);
 
-      const renderPercent = Math.round(5 + (frame / totalFrames) * 80);
-      callbacks.onProgress(renderPercent, `Rendering frame ${frame + 1}/${totalFrames} (${encoderName})`, etaSec);
+        callbacks.onProgress(renderPercent, `Rendering frame ${frame + 1}/${totalFrames} (${encoderName})`, etaSec);
+      }
 
       // Yield to GPU pipeline every 20 frames (not every 10 — less overhead)
       // Use Promise.resolve() microtask instead of requestAnimationFrame (faster, no vsync lock)
@@ -349,7 +340,7 @@ function createMediaRecorderAdapter(
   width: number,
   height: number,
   fps: number,
-  onProgress: (percent: number) => void,
+  onProgress?: (percent: number) => void,
 ): EncoderAdapter {
   let canvas: HTMLCanvasElement | null = null;
   let stream: MediaStream | null = null;
@@ -400,8 +391,10 @@ function createMediaRecorderAdapter(
         }
       }
       frameCount++;
-      const percent = Math.round((frameCount / totalFrames) * 90);
-      onProgress(percent);
+      if (onProgress) {
+        const percent = Math.round((frameCount / totalFrames) * 90);
+        onProgress(percent);
+      }
     },
 
     async finalize(): Promise<Blob> {
