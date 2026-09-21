@@ -171,29 +171,31 @@ export async function exportInBrowser(
       ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, width, height);
 
-      // Find and draw active clips
+      // Find active clips
       const activeClips = findActiveClips(sceneGraph, currentTime);
+
+      // Synchronize video seeking before drawing to eliminate text blinking
+      await syncVideoElements(activeClips, currentTime, videoElements);
 
       for (const clip of activeClips) {
         drawClip(ctx, clip, currentTime, width, height, videoElements);
       }
 
-      // Feed frame to encoder
+      // Feed frame to hardware encoder
       await encoder.addFrame(canvas);
 
-      // Calculate ETA
+      // Calculate rolling ETA & progress
       const elapsed = (performance.now() - startTime) / 1000;
-      const framesPerSec = (frame + 1) / elapsed;
+      const rollingFps = (frame + 1) / elapsed;
       const remainingFrames = totalFrames - frame - 1;
-      const etaSec = framesPerSec > 0 ? remainingFrames / framesPerSec : null;
+      const etaSec = rollingFps > 0 ? Math.ceil(remainingFrames / rollingFps) : null;
 
-      // Progress: 5-85% for rendering, 85-95% for encoding finalization
       const renderPercent = Math.round(5 + (frame / totalFrames) * 80);
       callbacks.onProgress(renderPercent, `Rendering frame ${frame + 1}/${totalFrames} (${encoderName})`, etaSec);
 
-      // Yield to browser every 2 frames to prevent UI freeze
-      if (frame % 2 === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
+      // High-speed yield to main thread every 10 frames to unthrottle GPU hardware pipeline
+      if (frame % 10 === 0) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
       }
     }
 
@@ -271,6 +273,54 @@ function findActiveClips(sceneGraph: any, currentTime: number): any[] {
 
 import { drawClipToCanvas } from './elementRenderer';
 
+async function syncVideoElements(
+  activeClips: any[],
+  currentTime: number,
+  videoElements: Map<string, HTMLVideoElement>,
+): Promise<void> {
+  const seekPromises: Promise<void>[] = [];
+
+  for (const clip of activeClips) {
+    if (clip.asset?.type === 'video') {
+      const vid = videoElements.get(clip.assetId) || videoElements.get(clip.id);
+      if (vid && vid.readyState >= 2) {
+        const targetTime = (clip.trimIn || 0) + (currentTime - clip.startTime);
+        if (Math.abs(vid.currentTime - targetTime) > 0.03) {
+          seekPromises.push(
+            new Promise<void>((resolve) => {
+              let timeout: any = null;
+              const onSeeked = () => {
+                clearTimeout(timeout);
+                vid.removeEventListener('seeked', onSeeked);
+                resolve();
+              };
+              vid.addEventListener('seeked', onSeeked, { once: true });
+              timeout = setTimeout(() => {
+                vid.removeEventListener('seeked', onSeeked);
+                resolve();
+              }, 40); // 40ms max frame seek timeout
+              try {
+                if ('fastSeek' in vid && typeof (vid as any).fastSeek === 'function') {
+                  (vid as any).fastSeek(targetTime);
+                } else {
+                  vid.currentTime = targetTime;
+                }
+              } catch {
+                vid.currentTime = targetTime;
+                resolve();
+              }
+            }),
+          );
+        }
+      }
+    }
+  }
+
+  if (seekPromises.length > 0) {
+    await Promise.all(seekPromises);
+  }
+}
+
 function drawClip(
   ctx: CanvasRenderingContext2D,
   clip: any,
@@ -279,16 +329,6 @@ function drawClip(
   canvasHeight: number,
   videoElements: Map<string, HTMLVideoElement>,
 ): void {
-  if (clip.asset?.type === 'video') {
-    const vid = videoElements.get(clip.assetId) || videoElements.get(clip.id);
-    if (vid && vid.readyState >= 2) {
-      const targetTime = (clip.trimIn || 0) + (currentTime - clip.startTime);
-      if (Math.abs(vid.currentTime - targetTime) > 0.05) {
-        vid.currentTime = targetTime;
-      }
-    }
-  }
-
   drawClipToCanvas(ctx, clip, currentTime, canvasWidth, canvasHeight, {
     videoElements,
   });
