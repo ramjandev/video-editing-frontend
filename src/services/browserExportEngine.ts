@@ -131,8 +131,19 @@ export async function exportInBrowser(
   callbacks.onProgress(2, `Initializing ${encoderName} encoder...`, null);
 
   try {
-    // 1. Initialize encoder
-    await encoder.init(totalFrames);
+    // 1. Initialize encoder with automatic in-browser fallback
+    try {
+      await encoder.init(totalFrames);
+    } catch (initErr: any) {
+      if (encoderName.includes('WebCodecs')) {
+        console.warn('[BrowserExportEngine] WebCodecs GPU init failed, falling back to MediaRecorder in browser:', initErr);
+        encoderName = 'MediaRecorder (WebM)';
+        encoder = createMediaRecorderAdapter(width, height, fps);
+        await encoder.init(totalFrames);
+      } else {
+        throw initErr;
+      }
+    }
     if (currentId !== activeExportId) return;
 
     // 2. Create offscreen canvas

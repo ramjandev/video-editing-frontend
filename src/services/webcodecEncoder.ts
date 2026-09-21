@@ -148,22 +148,21 @@ export class WebCodecEncoder {
     this.options.onProgress(percent);
 
     // Backpressure: if encoder queue is full, yield until drained
-    // Use microtask loop (queueMicrotask) instead of setTimeout to avoid 15.6ms OS timer overhead
-    if (this.encoder && this.encoder.encodeQueueSize > 10) {
+    // Use setTimeout (4ms) instead of requestAnimationFrame to prevent 2s GPU idle reclaim when tab/modal is backgrounded or throttled
+    if (this.encoder && this.encoder.encodeQueueSize > 6) {
       await new Promise<void>((resolve, reject) => {
         const drain = () => {
           if (this.lastError) return reject(this.lastError);
           if (!this.encoder || (this.encoder.state as string) === 'closed') {
             return reject(new Error('VideoEncoder closed during queue drain.'));
           }
-          if (this.encoder.encodeQueueSize <= 3) {
+          if (this.encoder.encodeQueueSize <= 2) {
             resolve();
           } else {
-            // Use rAF instead of setTimeout — fires as soon as GPU is ready, not on 15.6ms OS tick
-            requestAnimationFrame(drain);
+            setTimeout(drain, 4);
           }
         };
-        requestAnimationFrame(drain);
+        setTimeout(drain, 4);
       });
     }
   }
