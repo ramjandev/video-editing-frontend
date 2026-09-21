@@ -185,7 +185,7 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
       duration: 5,
       type: "text",
       content: "Title Goes There",
-      public_id: `text_${Date.now()}`,
+      public_id: `Text Element`,
     };
     dispatch(addAssetToTimeline({ asset: textAsset }));
     dispatch(triggerAutosave());
@@ -197,9 +197,9 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
       original_url: "",
       preview_url: "",
       duration: 5,
-      type: "image",
-      content: "QR Code",
-      public_id: `qr_${Date.now()}`,
+      type: "qr",
+      content: "https://example.com",
+      public_id: `QR Code`,
     };
     dispatch(addAssetToTimeline({ asset: qrAsset }));
     dispatch(triggerAutosave());
@@ -211,9 +211,9 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
       original_url: "",
       preview_url: "",
       duration: 5,
-      type: "image",
+      type: "slider",
       content: "Slider Widget",
-      public_id: `slider_${Date.now()}`,
+      public_id: `Slider Widget`,
     };
     dispatch(addAssetToTimeline({ asset: sliderAsset }));
     dispatch(triggerAutosave());
@@ -225,9 +225,9 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
       original_url: "",
       preview_url: "",
       duration: 5,
-      type: "image",
+      type: "shape",
       content: shapeName,
-      public_id: `shape_${shapeName}_${Date.now()}`,
+      public_id: `${shapeName} Shape`,
     };
     dispatch(addAssetToTimeline({ asset: shapeAsset }));
     dispatch(triggerAutosave());

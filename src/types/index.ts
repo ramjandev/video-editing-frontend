@@ -30,13 +30,15 @@ export interface AuthResponse {
   token: string;
 }
 
+export type AssetType = "video" | "audio" | "image" | "text" | "qr" | "shape" | "slider" | "export";
+
 export interface Asset {
   _id: string;
   original_url: string;
   preview_url: string;
   thumbnail_sprite_url?: string;
   duration: number;
-  type: "video" | "audio" | "image" | "text" | "export";
+  type: AssetType;
   content?: string;
   public_id: string;
 }
@@ -54,6 +56,58 @@ export interface Effect {
   params?: Record<string, any>;
 }
 
+export interface TransformProps {
+  x?: number; // Center-relative X (-480 to 480)
+  y?: number; // Center-relative Y (-270 to 270)
+  width?: number; // Pixel width
+  height?: number; // Pixel height
+  scale?: number; // Scale multiplier (default 1.0)
+  rotation?: number; // Rotation in degrees (0 to 360)
+  opacity?: number; // Opacity (0.0 to 1.0)
+}
+
+export interface TextStyles {
+  content?: string;
+  color?: string;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: string;
+  fontStyle?: "normal" | "italic";
+  align?: "left" | "center" | "right";
+  backgroundColor?: string;
+  backgroundPadding?: number;
+  borderRadius?: number;
+  strokeColor?: string;
+  strokeWidth?: number;
+  shadowColor?: string;
+  shadowBlur?: number;
+}
+
+export interface ShapeStyles {
+  shapeType?: "rectangle" | "ellipse" | "circle" | "triangle" | "star" | "line";
+  fillColor?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  borderRadius?: number;
+}
+
+export interface QrStyles {
+  qrContent?: string;
+  foregroundColor?: string;
+  backgroundColor?: string;
+}
+
+export interface SliderStyles {
+  images?: string[];
+  transition?: "left" | "right" | "fade" | "zoom";
+  slideDuration?: number;
+}
+
+export interface AnimationProps {
+  type?: "fade_in" | "fade_out" | "slide_left" | "slide_right" | "zoom_in" | "zoom_out" | "bounce";
+  duration?: number;
+}
+
 export interface Clip {
   id: string;
   assetId: string;
@@ -64,6 +118,12 @@ export interface Clip {
   trimOut: number;
   volume?: number;
   muted?: boolean;
+  transform?: TransformProps;
+  textStyles?: TextStyles;
+  shapeStyles?: ShapeStyles;
+  qrStyles?: QrStyles;
+  sliderStyles?: SliderStyles;
+  animation?: AnimationProps;
   effects?: Effect[];
   keyframes?: Keyframe[];
 }

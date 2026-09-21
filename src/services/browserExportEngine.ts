@@ -267,6 +267,8 @@ function findActiveClips(sceneGraph: any, currentTime: number): any[] {
   return active.reverse();
 }
 
+import { drawClipToCanvas } from './elementRenderer';
+
 function drawClip(
   ctx: CanvasRenderingContext2D,
   clip: any,
@@ -276,28 +278,18 @@ function drawClip(
   videoElements: Map<string, HTMLVideoElement>,
 ): void {
   if (clip.asset?.type === 'video') {
-    const vid = videoElements.get(clip.assetId);
+    const vid = videoElements.get(clip.assetId) || videoElements.get(clip.id);
     if (vid && vid.readyState >= 2) {
       const targetTime = (clip.trimIn || 0) + (currentTime - clip.startTime);
       if (Math.abs(vid.currentTime - targetTime) > 0.05) {
         vid.currentTime = targetTime;
       }
-      const scale = Math.min(canvasWidth / vid.videoWidth, canvasHeight / vid.videoHeight);
-      const dw = vid.videoWidth * scale;
-      const dh = vid.videoHeight * scale;
-      ctx.drawImage(vid, (canvasWidth - dw) / 2, (canvasHeight - dh) / 2, dw, dh);
     }
-  } else if (clip.asset?.type === 'image') {
-    // Images would need preloading too — handled similarly
-  } else if (clip.asset?.type === 'text') {
-    ctx.save();
-    ctx.font = `bold ${Math.round(canvasHeight * 0.07)}px Inter, sans-serif`;
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(clip.asset.content || '', canvasWidth / 2, canvasHeight / 2);
-    ctx.restore();
   }
+
+  drawClipToCanvas(ctx, clip, currentTime, canvasWidth, canvasHeight, {
+    videoElements,
+  });
 }
 
 async function uploadToServer(blob: Blob, format: string): Promise<string> {

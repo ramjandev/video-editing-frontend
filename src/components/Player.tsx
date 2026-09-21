@@ -1,12 +1,15 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store";
+import { updateClip } from "@/store/editorSlice";
+import { triggerAutosave } from "@/store/thunks";
 import type { Clip } from "@/types";
 import { getMediaUrl } from "@/lib/api";
 import { LayoutGrid } from "lucide-react";
 
 import { mediaManager } from "@/services/mediaManager";
 import { getAssetFrameSnapshots, saveAssetFrameSnapshots } from "@/services/indexedDbCache";
+import { drawClipToCanvas } from "@/services/elementRenderer";
 
 interface PlayerProps {
   zoomScale?: number;
@@ -21,7 +24,9 @@ interface MediaSeekTracker {
 
 export function Player({ zoomScale = 0.6 }: PlayerProps) {
   const dispatch = useAppDispatch();
-  const { sceneGraph } = useAppSelector((state) => state.editor);
+  const sceneGraph = useAppSelector((state) => state.editor.sceneGraph);
+  const selectedClipId = useAppSelector((state) => state.editor.selectedClipId);
+
   const videoRefs = useRef<Map<string, HTMLMediaElement>>(new Map());
   const seekMapRef = useRef<Map<string, MediaSeekTracker>>(new Map());
   const frameCacheRef = useRef<Map<string, Map<number, HTMLCanvasElement | HTMLImageElement>>>(new Map());
@@ -29,6 +34,31 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const reqRef = useRef<number>(0);
   const imageCache = useRef<Record<string, HTMLImageElement>>({});
+
+  // Interactive Canvas Bounding Box Drag State
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragMode, setDragMode] = useState<"move" | "resize" | null>(null);
+  const dragStartRef = useRef<{ mouseX: number; mouseY: number; initialX: number; initialY: number; initialScale: number }>({
+    mouseX: 0,
+    mouseY: 0,
+    initialX: 0,
+    initialY: 0,
+    initialScale: 1.0,
+  });
+
+  // Find selected clip
+  let selectedClip: Clip | null = null;
+  let selectedTrackId = "";
+  if (sceneGraph && selectedClipId) {
+    for (const track of sceneGraph.tracks) {
+      const clip = track.clips.find((c) => c.id === selectedClipId);
+      if (clip) {
+        selectedClip = clip;
+        selectedTrackId = track.id;
+        break;
+      }
+    }
+  }
 
   const saveFrameSnapshot = (assetKey: string, time: number, source: HTMLVideoElement) => {
     if (!source || source.videoWidth === 0 || !assetKey) return;
@@ -69,7 +99,6 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
       if (sampleSec > clipDuration) {
         offscreen.removeAttribute("src");
         offscreen.load();
-        // Persist frame snapshots to IndexedDB for instant reload support
         const clipMap = frameCacheRef.current.get(assetKey);
         if (clipMap && clipMap.size > 0) {
           const framesToStore: { time: number; dataUrl: string }[] = [];
@@ -155,7 +184,6 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
           const isAudio = clip.asset.type === "audio";
           const rawUrl = getMediaUrl(clip.asset.preview_url || clip.asset.original_url);
 
-          // Asynchronously pre-load saved frame snapshots from IndexedDB if not already in memory
           if (!isAudio && assetKey && !frameCacheRef.current.has(assetKey)) {
             frameCacheRef.current.set(assetKey, new Map());
             getAssetFrameSnapshots(assetKey).then((savedFrames) => {
@@ -173,7 +201,6 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
           }
 
           if (media) {
-            // Hot-swap media src if 480p preview proxy becomes available
             const cachedBlobUrl = mediaManager.getCachedBlobUrlSync(clip.asset._id, rawUrl);
             const targetUrl = cachedBlobUrl || rawUrl;
             if (targetUrl && clip.asset.preview_url && !media.src.includes(clip.asset.preview_url)) {
@@ -195,7 +222,6 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
             createdMedia.muted = isMuted;
             createdMedia.volume = isMuted ? 0 : Math.min(1, Math.max(0, (clip.volume ?? 100) / 100));
 
-            // Non-blocking seek tracker for continuous, instant scrubbing
             const tracker: MediaSeekTracker = {
               isSeeking: false,
               pendingTime: null,
@@ -236,7 +262,6 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
             tracker.cleanup = () => createdMedia.removeEventListener("seeked", onSeeked);
             videoRefs.current.set(clip.id, createdMedia);
 
-            // Fetch into local blob / IndexedDB in background
             mediaManager.getOrLoadMediaBlobUrl(clip.asset._id, rawUrl).then((blobUrl) => {
               if (blobUrl && createdMedia && createdMedia.src !== blobUrl) {
                 const currentPos = createdMedia.currentTime;
@@ -255,7 +280,6 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
               }
             });
 
-            // If already cached locally, trigger pre-sampling right away
             if (cachedBlobUrl && !isAudio) {
               triggerLocalPreSampling(
                 assetKey,
@@ -268,7 +292,6 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
       });
     });
 
-    // Clean up ONLY clips that were genuinely removed from the project
     for (const [id, media] of videoRefs.current.entries()) {
       if (!currentClipIds.has(id)) {
         const tracker = seekMapRef.current.get(id);
@@ -282,6 +305,7 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
     }
   }, [sceneGraph]);
 
+  // Main Canvas Render Loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -323,19 +347,12 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
             if (currentIsPlaying) {
               if (media.paused) {
                 media.currentTime = currentClipTime;
-                media.play().catch((err) => {
-                  console.warn(`Media play failed for clip ${clip.id}:`, err);
-                });
+                media.play().catch(() => {});
               } else if (Math.abs(media.currentTime - currentClipTime) > 1.5) {
-                // Only resync if drift is substantial (prevents infinite seek loops during playback)
                 media.currentTime = currentClipTime;
               }
             } else {
-              // SCRUBBING MODE: non-blocking seek queue with cadence throttle
-              if (!media.paused) {
-                media.pause();
-              }
-              // Skip seeking audio while scrubbing to save decoder threads for video
+              if (!media.paused) media.pause();
               if (clip.asset.type === "audio") return;
 
               const tracker = seekMapRef.current.get(clip.id);
@@ -343,7 +360,6 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
                 if (Math.abs(media.currentTime - currentClipTime) > 0.02) {
                   const now = performance.now();
                   if (media.seeking || tracker.isSeeking) {
-                    // Queue latest time without aborting the in-progress hardware decoder frame
                     tracker.pendingTime = currentClipTime;
                   } else {
                     if (now - tracker.lastSeekTimestamp >= 25) {
@@ -376,53 +392,15 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
         }
       }
 
-      const currentVideoClip = activeClips.find((c) => c.asset.type === "video");
-      const video = currentVideoClip ? (videoRefs.current.get(currentVideoClip.id) as HTMLVideoElement | undefined) : null;
-
       const isDark = document.documentElement.classList.contains("dark");
-
-      // Fill canvas background with dark/black letterbox (NEVER white, to prevent blinding strobe flashes)
       ctx.fillStyle = isDark ? "#090d16" : "#0f172a";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Render active clips from bottom track to top track
-      [...activeClips].reverse().forEach((clip) => {
-        if (clip.asset.type === "audio") return;
-
-        if (clip.asset.type === "video" && clip.id === currentVideoClip?.id && video) {
-          try {
-            const assetKey = clip.asset._id || clip.asset.public_id || clip.id;
-            const currentClipTime = clip.trimIn + (currentPlayhead - clip.startTime);
-            const tracker = seekMapRef.current.get(clip.id);
-
-            if (video.videoWidth > 0) {
-              const scale = Math.min(
-                canvas.width / video.videoWidth,
-                canvas.height / video.videoHeight
-              );
-              const w = video.videoWidth * scale;
-              const h = video.videoHeight * scale;
-              const x = (canvas.width - w) / 2;
-              const y = (canvas.height - h) / 2;
-
-              // If scrubbing fast and we have a cached snapshot close to target time, show snapshot for instant feedback
-              const cached = tracker?.isSeeking ? getClosestFrame(assetKey, currentClipTime) : null;
-              if (cached) {
-                ctx.drawImage(cached, x, y, w, h);
-              } else {
-                // Always draw video element's latest frame — eliminates blank flashes
-                ctx.drawImage(video, x, y, w, h);
-              }
-
-              if (!tracker?.isSeeking && video.readyState >= 2) {
-                saveFrameSnapshot(assetKey, currentClipTime, video);
-              }
-            }
-          } catch (e) {
-            console.error("Failed drawing video frame", e);
-          }
-        } else if (clip.asset.type === "image") {
-          const url = getMediaUrl(clip.asset.preview_url || clip.asset.original_url);
+      // Map image elements for image clips
+      const imageElementsMap = new Map<string, HTMLImageElement>();
+      activeClips.forEach((c) => {
+        if (c.asset.type === "image") {
+          const url = getMediaUrl(c.asset.preview_url || c.asset.original_url);
           if (url) {
             let img = imageCache.current[url];
             if (!img) {
@@ -432,21 +410,33 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
               imageCache.current[url] = img;
             }
             if (img.complete && img.width > 0) {
-              const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-              const w = img.width * scale;
-              const h = img.height * scale;
-              const x = (canvas.width - w) / 2;
-              const y = (canvas.height - h) / 2;
-              ctx.drawImage(img, x, y, w, h);
+              imageElementsMap.set(c.id, img);
+              imageElementsMap.set(c.assetId, img);
             }
           }
-        } else if (clip.asset.type === "text") {
-          ctx.fillStyle = isDark ? "#f8fafc" : "#0f172a";
-          ctx.font = "bold 36px Inter, sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(clip.asset.content || "Title Goes There", canvas.width / 2, canvas.height - 60);
         }
+      });
+
+      // Render active clips bottom-to-top using elementRenderer
+      [...activeClips].reverse().forEach((clip) => {
+        if (clip.asset.type === "audio") return;
+
+        if (clip.asset.type === "video") {
+          const assetKey = clip.asset._id || clip.asset.public_id || clip.id;
+          const tracker = seekMapRef.current.get(clip.id);
+          const currentClipTime = clip.trimIn + (currentPlayhead - clip.startTime);
+          const video = videoRefs.current.get(clip.id) as HTMLVideoElement | undefined;
+          if (video && !tracker?.isSeeking && video.readyState >= 2) {
+            saveFrameSnapshot(assetKey, currentClipTime, video);
+          } else if (tracker?.isSeeking) {
+            getClosestFrame(assetKey, currentClipTime);
+          }
+        }
+
+        drawClipToCanvas(ctx, clip, currentPlayhead, canvas.width, canvas.height, {
+          videoElements: videoRefs.current,
+          imageElements: imageElementsMap,
+        });
       });
 
       reqRef.current = requestAnimationFrame(render);
@@ -456,6 +446,89 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
     return () => cancelAnimationFrame(reqRef.current);
   }, [dispatch]);
 
+  // Handle Dragging Position & Scale on Canvas
+  const handleMouseDown = (e: React.MouseEvent, mode: "move" | "resize") => {
+    if (!selectedClip) return;
+    e.stopPropagation();
+    setIsDragging(true);
+    setDragMode(mode);
+
+    const initialTransform = selectedClip.transform || {};
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      initialX: initialTransform.x ?? 0,
+      initialY: initialTransform.y ?? 0,
+      initialScale: initialTransform.scale ?? 1.0,
+    };
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!selectedClip || !selectedTrackId) return;
+
+      const deltaX = (e.clientX - dragStartRef.current.mouseX) / zoomScale;
+      const deltaY = (e.clientY - dragStartRef.current.mouseY) / zoomScale;
+
+      if (dragMode === "move") {
+        const newX = Math.round(dragStartRef.current.initialX + deltaX);
+        const newY = Math.round(dragStartRef.current.initialY + deltaY);
+        dispatch(
+          updateClip({
+            trackId: selectedTrackId,
+            clipId: selectedClip.id,
+            updates: {
+              transform: {
+                ...(selectedClip.transform || {}),
+                x: newX,
+                y: newY,
+              },
+            },
+          })
+        );
+      } else if (dragMode === "resize") {
+        const scaleDelta = (deltaX + deltaY) / 200;
+        const newScale = Math.max(0.2, Math.min(3.0, dragStartRef.current.initialScale + scaleDelta));
+        dispatch(
+          updateClip({
+            trackId: selectedTrackId,
+            clipId: selectedClip.id,
+            updates: {
+              transform: {
+                ...(selectedClip.transform || {}),
+                scale: parseFloat(newScale.toFixed(2)),
+              },
+            },
+          })
+        );
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setDragMode(null);
+      dispatch(triggerAutosave());
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging, dragMode, selectedClip, selectedTrackId, zoomScale, dispatch]);
+
+  // Calculate selected clip bounding box position on canvas
+  const selTransform = selectedClip?.transform || {};
+  const selX = (selTransform.x ?? 0) + 480;
+  const selY = (selTransform.y ?? 0) + 270;
+  const selScale = selTransform.scale ?? 1.0;
+  const selWidth = (selTransform.width || 320) * selScale;
+  const selHeight = (selTransform.height || 200) * selScale;
+  const selRot = selTransform.rotation ?? 0;
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center relative w-full h-full p-6 select-none overflow-hidden bg-slate-100 dark:bg-slate-900">
       {/* Top Left Layout Grid Icon Button */}
@@ -463,7 +536,7 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
         <LayoutGrid className="w-5 h-5" />
       </button>
 
-      {/* Main Canvas Canvas Frame Container */}
+      {/* Main Canvas Container */}
       <div
         className="relative bg-white dark:bg-slate-950 shadow-2xl rounded-sm transition-transform duration-200"
         style={{
@@ -478,18 +551,55 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
           className="w-[960px] h-[540px] block"
         />
 
-        {/* Selected Element Transform Bounding Box Handle Overlay */}
-        <div className="absolute inset-4 border-2 border-sky-400 pointer-events-none rounded-xs">
-          {/* 8 Transform Control Dots */}
-          <div className="w-3 h-3 bg-white border-2 border-sky-500 rounded-full absolute -top-1.5 -left-1.5 shadow-sm" />
-          <div className="w-3 h-3 bg-white border-2 border-sky-500 rounded-full absolute -top-1.5 left-1/2 -translate-x-1/2 shadow-sm" />
-          <div className="w-3 h-3 bg-white border-2 border-sky-500 rounded-full absolute -top-1.5 -right-1.5 shadow-sm" />
-          <div className="w-3 h-3 bg-white border-2 border-sky-500 rounded-full absolute top-1/2 -left-1.5 -translate-y-1/2 shadow-sm" />
-          <div className="w-3 h-3 bg-white border-2 border-sky-500 rounded-full absolute top-1/2 -right-1.5 -translate-y-1/2 shadow-sm" />
-          <div className="w-3 h-3 bg-white border-2 border-sky-500 rounded-full absolute -bottom-1.5 -left-1.5 shadow-sm" />
-          <div className="w-3 h-3 bg-white border-2 border-sky-500 rounded-full absolute -bottom-1.5 left-1/2 -translate-x-1/2 shadow-sm" />
-          <div className="w-3 h-3 bg-white border-2 border-sky-500 rounded-full absolute -bottom-1.5 -right-1.5 shadow-sm" />
-        </div>
+        {/* Selected Element Interactive Transform Bounding Box Overlay */}
+        {selectedClip && (
+          <div
+            onMouseDown={(e) => handleMouseDown(e, "move")}
+            className="absolute border-2 border-sky-400 cursor-move rounded-xs transition-opacity z-30"
+            style={{
+              left: `${selX - selWidth / 2}px`,
+              top: `${selY - selHeight / 2}px`,
+              width: `${selWidth}px`,
+              height: `${selHeight}px`,
+              transform: `rotate(${selRot}deg)`,
+              transformOrigin: "center center",
+            }}
+          >
+            {/* 8 Transform Control Dots for Resizing */}
+            <div
+              onMouseDown={(e) => handleMouseDown(e, "resize")}
+              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -top-2 -left-2 shadow-md cursor-nwse-resize"
+            />
+            <div
+              onMouseDown={(e) => handleMouseDown(e, "resize")}
+              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -top-2 left-1/2 -translate-x-1/2 shadow-md cursor-ns-resize"
+            />
+            <div
+              onMouseDown={(e) => handleMouseDown(e, "resize")}
+              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -top-2 -right-2 shadow-md cursor-nesw-resize"
+            />
+            <div
+              onMouseDown={(e) => handleMouseDown(e, "resize")}
+              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute top-1/2 -left-2 -translate-y-1/2 shadow-md cursor-ew-resize"
+            />
+            <div
+              onMouseDown={(e) => handleMouseDown(e, "resize")}
+              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute top-1/2 -right-2 -translate-y-1/2 shadow-md cursor-ew-resize"
+            />
+            <div
+              onMouseDown={(e) => handleMouseDown(e, "resize")}
+              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -bottom-2 -left-2 shadow-md cursor-nesw-resize"
+            />
+            <div
+              onMouseDown={(e) => handleMouseDown(e, "resize")}
+              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -bottom-2 left-1/2 -translate-x-1/2 shadow-md cursor-ns-resize"
+            />
+            <div
+              onMouseDown={(e) => handleMouseDown(e, "resize")}
+              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -bottom-2 -right-2 shadow-md cursor-nwse-resize"
+            />
+          </div>
+        )}
       </div>
     </div>
   );
