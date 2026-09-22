@@ -535,7 +535,7 @@ export function Timeline() {
                   <Video className="w-4 h-4 text-sky-500 shrink-0" />
                 )}
 
-                {sceneGraph.tracks.length > 2 && (
+                {sceneGraph.tracks.length > 1 && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -543,9 +543,9 @@ export function Timeline() {
                       dispatch(triggerAutosave());
                     }}
                     title="Delete Track"
-                    className="absolute inset-0 bg-white/90 dark:bg-slate-900/90 text-red-500 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-40"
+                    className="absolute inset-0 bg-red-500/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-40 rounded-xs"
                   >
-                    <Trash2 className="w-4 h-4 text-red-500" />
+                    <Trash2 className="w-4 h-4 text-white" />
                   </button>
                 )}
               </div>
