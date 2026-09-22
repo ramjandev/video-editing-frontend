@@ -48,16 +48,25 @@ const initialState: EditorState = {
   past: [],
   future: [],
 };
-// Utility function to normalize track layers so overlay tracks (text, shape, qr, slider, annotations) stay on top of video tracks
 const normalizeTrackLayers = (sceneGraph: SceneGraph) => {
   if (!sceneGraph || !sceneGraph.tracks) return;
+
+  // Filter out empty tracks (0 clips)
+  const nonEmpTracks = sceneGraph.tracks.filter((track) => track.clips && track.clips.length > 0);
+  if (nonEmpTracks.length > 0) {
+    sceneGraph.tracks = nonEmpTracks;
+  } else if (sceneGraph.tracks.length > 2) {
+    // Keep at most 2 default empty tracks if project has 0 total clips
+    sceneGraph.tracks = sceneGraph.tracks.slice(0, 2);
+  }
+
   const overlayTracks: Track[] = [];
   const videoTracks: Track[] = [];
   const audioTracks: Track[] = [];
 
   for (const track of sceneGraph.tracks) {
     const hasOverlayClips = track.clips.some((c) =>
-      ["text", "qr", "shape", "slider"].includes(c.asset.type)
+      ["text", "qr", "shape", "slider"].includes(c.asset?.type)
     );
     if (track.type === "audio") {
       audioTracks.push(track);
