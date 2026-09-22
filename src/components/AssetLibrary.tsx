@@ -19,6 +19,8 @@ import {
   Square,
   Circle,
   Triangle,
+  Star as StarIcon,
+  Minus,
   Play,
   Trash2,
   Download,
@@ -645,6 +647,22 @@ export function AssetLibrary({ activeRailTab: propsRailTab, onRailTabChange }: A
                 >
                   <Triangle className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-sky-500 mb-1" />
                   <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">Triangle</span>
+                </button>
+
+                <button
+                  onClick={() => handleAddShape("Star")}
+                  className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:border-sky-400 transition-all cursor-pointer group"
+                >
+                  <StarIcon className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-sky-500 mb-1" />
+                  <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">Star</span>
+                </button>
+
+                <button
+                  onClick={() => handleAddShape("Line")}
+                  className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:border-sky-400 transition-all cursor-pointer group"
+                >
+                  <Minus className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-sky-500 mb-1" />
+                  <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">Line</span>
                 </button>
               </div>
             </div>

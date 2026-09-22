@@ -537,6 +537,21 @@ export function PropertiesPanel() {
                   </div>
                 </div>
               </div>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <span>Stroke / Line Thickness</span>
+                  <span>{shapeStyles.strokeWidth ?? (shapeStyles.shapeType === "line" || (shapeStyles.shapeType as any) === "Line" ? 4 : 0)}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={40}
+                  value={shapeStyles.strokeWidth ?? (shapeStyles.shapeType === "line" || (shapeStyles.shapeType as any) === "Line" ? 4 : 0)}
+                  onChange={(e) => handleUpdateShapeStyles({ strokeWidth: parseInt(e.target.value) })}
+                  className="w-full accent-sky-500 cursor-pointer"
+                />
+              </div>
             </div>
           )}
 

@@ -218,6 +218,10 @@ const editorSlice = createSlice({
       const targetType = isAudio ? "audio" : isOverlay ? "text" : "video";
 
       const clipDuration = asset.duration || 5;
+      const isShape = asset.type === "shape";
+      const isText = asset.type === "text";
+      const isLine = asset.content === "Line" || asset.content === "line";
+
       const newClip: Clip = {
         id: `clip_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         assetId: asset._id,
@@ -226,6 +230,34 @@ const editorSlice = createSlice({
         endTime: startTime + clipDuration,
         trimIn: 0,
         trimOut: clipDuration,
+        transform: {
+          x: 0,
+          y: 0,
+          scale: 1,
+          rotation: 0,
+          opacity: 1,
+          width: isShape ? 200 : undefined,
+          height: isShape ? 150 : undefined,
+        },
+        shapeStyles: isShape
+          ? {
+              shapeType: (asset.content as any) || "Rectangle",
+              fillColor: isLine ? "transparent" : "#38bdf8",
+              strokeColor: "#38bdf8",
+              strokeWidth: isLine ? 4 : 0,
+              borderRadius: 8,
+            }
+          : undefined,
+        textStyles: isText
+          ? {
+              content: asset.content || "Title Goes There",
+              fontSize: 48,
+              fontFamily: "Inter",
+              fontWeight: "Bold",
+              color: "#ffffff",
+              align: "center",
+            }
+          : undefined,
       };
 
       let targetTrack: Track | undefined;

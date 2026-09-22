@@ -234,7 +234,9 @@ export function drawClipToCanvas(
       ctx.moveTo(-halfW, 0);
       ctx.lineTo(halfW, 0);
       ctx.stroke();
-    } else {
+    }
+
+    if (shapeType !== "Line" && shapeType !== "line") {
       ctx.fill();
       if (stroke && strokeW > 0) {
         ctx.stroke();
