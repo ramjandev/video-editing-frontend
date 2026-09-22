@@ -1,4 +1,4 @@
-import { Download } from "lucide-react";
+import { Download, Eye } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AdminPanel } from "./components/AdminPanel";
 import { AssetLibrary } from "./components/AssetLibrary";
@@ -231,6 +231,15 @@ const App = () => {
               )}
 
               <ActionButton
+                onClick={() => setIsPreviewOpen(true)}
+                title="Full Project Preview (P)"
+                label="Preview"
+                icon={Eye}
+                variant="outline"
+                color="sky"
+              />
+
+              <ActionButton
                 onClick={handleExport}
                 title="Export Video"
                 label="Export Video"
@@ -249,7 +258,10 @@ const App = () => {
 
             <div className="flex-1 flex flex-col min-w-0 bg-slate-50 dark:bg-slate-900">
               <div className="flex-1 flex items-center justify-center relative min-h-[300px] overflow-hidden">
-                <Player zoomScale={zoomPercent / 100} />
+                <Player
+                  zoomScale={zoomPercent / 100}
+                  onOpenPreview={() => setIsPreviewOpen(true)}
+                />
               </div>
               <div className="h-[280px] shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
                 <Timeline />

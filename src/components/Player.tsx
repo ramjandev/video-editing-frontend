@@ -5,7 +5,7 @@ import { updateClip } from "@/store/editorSlice";
 import { triggerAutosave } from "@/store/thunks";
 import type { Clip } from "@/types";
 import { getMediaUrl } from "@/lib/api";
-import { LayoutGrid } from "lucide-react";
+import { LayoutGrid, Maximize2 } from "lucide-react";
 
 import { mediaManager } from "@/services/mediaManager";
 import { getAssetFrameSnapshots, saveAssetFrameSnapshots } from "@/services/indexedDbCache";
@@ -14,6 +14,7 @@ import { SelectLayoutModal } from "./SelectLayoutModal";
 
 interface PlayerProps {
   zoomScale?: number;
+  onOpenPreview?: () => void;
 }
 
 interface MediaSeekTracker {
@@ -23,7 +24,7 @@ interface MediaSeekTracker {
   cleanup?: () => void;
 }
 
-export function Player({ zoomScale = 0.6 }: PlayerProps) {
+export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
   const dispatch = useAppDispatch();
   const sceneGraph = useAppSelector((state) => state.editor.sceneGraph);
   const selectedClipId = useAppSelector((state) => state.editor.selectedClipId);
@@ -653,6 +654,17 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
       >
         <LayoutGrid className="w-5 h-5" />
       </button>
+
+      {/* Top Right Fullscreen Preview Button */}
+      {onOpenPreview && (
+        <button
+          onClick={onOpenPreview}
+          title="Open Fullscreen Preview (P)"
+          className="absolute top-6 right-6 w-9 h-9 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors z-20 cursor-pointer"
+        >
+          <Maximize2 className="w-4 h-4" />
+        </button>
+      )}
 
       {/* Main Canvas Container */}
       <div

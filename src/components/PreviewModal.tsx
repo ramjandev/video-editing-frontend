@@ -1,29 +1,88 @@
+import { getMediaUrl } from "@/lib/api";
+import { formatTimeCode } from "@/lib/utils";
+import { drawClipToCanvas, getSortedActiveClips } from "@/services/elementRenderer";
 import { store } from "@/store";
 import { setPlayhead, togglePlay } from "@/store/editorSlice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import type { Clip } from "@/types";
-import { useEffect, useRef } from "react";
-import { getMediaUrl } from "@/lib/api";
-
-interface MediaSeekTracker {
-  isSeeking: boolean;
-  pendingTime: number | null;
-  cleanup?: () => void;
-}
+import {
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  RotateCcw,
+  SkipBack,
+  SkipForward,
+  X,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 export function PreviewModal({ onClose }: { onClose: () => void }) {
   const dispatch = useAppDispatch();
   const { sceneGraph, playhead, isPlaying } = useAppSelector(
     (state) => state.editor,
   );
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
-  const seekMapRef = useRef<Map<string, MediaSeekTracker>>(new Map());
-
-  // Cache for images
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRefs = useRef<Map<string, HTMLMediaElement>>(new Map());
   const imageCache = useRef<Record<string, HTMLImageElement>>({});
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const scrubberRef = useRef<HTMLDivElement>(null);
 
-  // Setup hidden video elements for videos and audio
+  const duration = sceneGraph?.duration && sceneGraph.duration > 0 ? sceneGraph.duration : 1;
+
+  // Handle closing with cleanup
+  const handleClose = () => {
+    if (isPlaying) {
+      dispatch(togglePlay());
+    }
+    videoRefs.current.forEach((media) => {
+      media.pause();
+    });
+    onClose();
+  };
+
+  // Keyboard navigation within the Preview Modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        handleClose();
+      } else if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        dispatch(togglePlay());
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        const step = e.shiftKey ? 5 : 1;
+        dispatch(setPlayhead(Math.max(0, playhead - step)));
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        const step = e.shiftKey ? 5 : 1;
+        dispatch(setPlayhead(Math.min(duration, playhead + step)));
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        dispatch(setPlayhead(0));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [dispatch, playhead, duration, isPlaying]);
+
+  // Fullscreen toggle
+  const toggleFullscreen = async () => {
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      await containerRef.current.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      await document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
+    }
+  };
+
+  // Setup media elements (video & audio)
   useEffect(() => {
     if (!sceneGraph) return;
 
@@ -31,70 +90,42 @@ export function PreviewModal({ onClose }: { onClose: () => void }) {
       track.clips.forEach((clip) => {
         if (
           (clip.asset.type === "video" || clip.asset.type === "audio") &&
-          !videoRefs.current.has(clip.assetId)
+          !videoRefs.current.has(clip.id)
         ) {
-          const video = document.createElement("video");
+          const isAudio = clip.asset.type === "audio";
+          const media = document.createElement(isAudio ? "audio" : "video");
           const url = getMediaUrl(clip.asset.preview_url || clip.asset.original_url);
-          video.src = url;
+          media.src = url;
           if (url.startsWith("http")) {
-            video.crossOrigin = "anonymous";
+            media.crossOrigin = "anonymous";
           }
-          video.preload = "auto";
-          video.muted = false; // We want audio in preview
+          media.preload = "auto";
+          media.muted = !!clip.muted;
+          media.volume = typeof clip.volume === "number" ? clip.volume : 1.0;
+          if (!isAudio) {
+            (media as HTMLVideoElement).playsInline = true;
+          }
 
-          const tracker: MediaSeekTracker = {
-            isSeeking: false,
-            pendingTime: null,
-          };
-          seekMapRef.current.set(clip.assetId, tracker);
-
-          const performSeek = (time: number) => {
-            tracker.isSeeking = true;
-            if ("fastSeek" in video && typeof (video as any).fastSeek === "function") {
-              try {
-                (video as any).fastSeek(time);
-              } catch {
-                video.currentTime = time;
-              }
-            } else {
-              video.currentTime = time;
-            }
-          };
-
-          const onSeeked = () => {
-            tracker.isSeeking = false;
-            if (tracker.pendingTime !== null) {
-              const nextTime = tracker.pendingTime;
-              tracker.pendingTime = null;
-              if (Math.abs(video.currentTime - nextTime) > 0.02) {
-                performSeek(nextTime);
-              }
-            }
-          };
-
-          video.addEventListener("seeked", onSeeked);
-          tracker.cleanup = () => video.removeEventListener("seeked", onSeeked);
-
-          videoRefs.current.set(clip.assetId, video);
+          videoRefs.current.set(clip.id, media);
+          videoRefs.current.set(clip.assetId, media);
+          if (clip.asset._id) {
+            videoRefs.current.set(clip.asset._id, media);
+          }
         }
       });
     });
 
     return () => {
-      seekMapRef.current.forEach((t) => {
-        if (t.cleanup) t.cleanup();
-      });
-      seekMapRef.current.clear();
-      videoRefs.current.forEach((video) => {
-        video.pause();
-        video.removeAttribute("src");
-        video.load();
+      videoRefs.current.forEach((media) => {
+        media.pause();
+        media.removeAttribute("src");
+        media.load();
       });
       videoRefs.current.clear();
     };
   }, [sceneGraph]);
 
-  // Main render loop
+  // Main high-fidelity render loop
   useEffect(() => {
     let animationFrameId: number;
 
@@ -108,212 +139,262 @@ export function PreviewModal({ onClose }: { onClose: () => void }) {
         isPlaying: currentIsPlaying,
         sceneGraph: currentSceneGraph,
       } = store.getState().editor;
+
       if (!currentSceneGraph) return;
 
-      // Clear background
+      // 1. Clear canvas background
       ctx.fillStyle = "#000000";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Find active clips
-      const activeClips: Clip[] = [];
-      for (const track of currentSceneGraph.tracks) {
-        const clip = track.clips.find(
-          (c) => currentPlayhead >= c.startTime && currentPlayhead <= c.endTime,
-        );
-        if (clip) {
-          activeClips.push(clip);
-        }
-      }
-
-      // Sync and draw active clips from bottom to top
-      [...activeClips].reverse().forEach((clip) => {
-        if (clip.asset.type === "video" || clip.asset.type === "audio") {
-          const video = videoRefs.current.get(clip.assetId);
-          if (video) {
-            const currentClipTime =
-              clip.trimIn + (currentPlayhead - clip.startTime);
-
-            if (currentIsPlaying) {
-              if (video.paused) {
-                video.currentTime = currentClipTime;
-                video.play().catch(() => {});
-              } else if (Math.abs(video.currentTime - currentClipTime) > 0.35) {
-                video.currentTime = currentClipTime;
+      // 2. Preload & cache any required images
+      const imageElementsMap = new Map<string, HTMLImageElement>();
+      currentSceneGraph.tracks.forEach((track) => {
+        track.clips.forEach((c) => {
+          if (c.asset?.type === "image") {
+            const url = getMediaUrl(c.asset.preview_url || c.asset.original_url);
+            if (url) {
+              let img = imageCache.current[url];
+              if (!img) {
+                img = new Image();
+                img.crossOrigin = "anonymous";
+                img.src = url;
+                imageCache.current[url] = img;
               }
-            } else {
-              if (!video.paused) {
-                video.pause();
-              }
-              if (clip.asset.type === "audio") return;
-
-              const tracker = seekMapRef.current.get(clip.assetId);
-              if (tracker) {
-                if (Math.abs(video.currentTime - currentClipTime) > 0.02) {
-                  if (video.seeking || tracker.isSeeking) {
-                    tracker.pendingTime = currentClipTime;
-                  } else {
-                    tracker.isSeeking = true;
-                    if ("fastSeek" in video && typeof (video as any).fastSeek === "function") {
-                      try {
-                        (video as any).fastSeek(currentClipTime);
-                      } catch {
-                        video.currentTime = currentClipTime;
-                      }
-                    } else {
-                      video.currentTime = currentClipTime;
-                    }
-                  }
-                }
+              if (img.complete && img.width > 0) {
+                imageElementsMap.set(c.id, img);
+                imageElementsMap.set(c.assetId, img);
+                if (c.asset._id) imageElementsMap.set(c.asset._id, img);
               }
             }
-
-            if (clip.asset.type === "video" && video.videoWidth > 0 && (video.readyState >= 1 || video.currentTime > 0)) {
-              // Basic scale to fit keeping aspect ratio
-              const scale = Math.min(
-                canvas.width / video.videoWidth,
-                canvas.height / video.videoHeight,
-              );
-              const w = video.videoWidth * scale;
-              const h = video.videoHeight * scale;
-              const x = (canvas.width - w) / 2;
-              const y = (canvas.height - h) / 2;
-              ctx.drawImage(video, x, y, w, h);
-            }
           }
-        } else if (clip.asset.type === "image") {
-          // Render image
-          let img = imageCache.current[clip.asset.preview_url];
-          if (!img) {
-            img = new Image();
-            img.crossOrigin = "anonymous";
-            img.src = clip.asset.preview_url;
-            imageCache.current[clip.asset.preview_url] = img;
-          }
-          if (img.complete) {
-            const scale = Math.min(
-              canvas.width / img.width,
-              canvas.height / img.height,
-            );
-            const w = img.width * scale;
-            const h = img.height * scale;
-            const x = (canvas.width - w) / 2;
-            const y = (canvas.height - h) / 2;
-            ctx.drawImage(img, x, y, w, h);
-          }
-        } else if (clip.asset.type === "text") {
-          ctx.fillStyle = "#ffffff";
-          ctx.font = "bold 72px Inter, sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(
-            clip.asset.content || "",
-            canvas.width / 2,
-            canvas.height / 2,
-          );
-        }
+        });
       });
 
-      // Pause inactive videos/audio
-      for (const [id, video] of videoRefs.current.entries()) {
-        const isActive = activeClips.some((c) => c.assetId === id);
-        if (!isActive && !video.paused) {
-          video.pause();
-        }
-      }
+      // 3. Find sorted active clips in correct painter's algorithm order
+      const activeClips = getSortedActiveClips(currentSceneGraph, currentPlayhead);
+
+      // 4. Synchronize video & audio elements with current playhead
+      currentSceneGraph.tracks.forEach((track) => {
+        track.clips.forEach((clip) => {
+          if (clip.asset.type === "video" || clip.asset.type === "audio") {
+            const media = videoRefs.current.get(clip.id);
+            if (!media) return;
+
+            const isActive =
+              currentPlayhead >= clip.startTime && currentPlayhead <= clip.endTime;
+
+            if (isActive) {
+              const currentClipTime =
+                clip.trimIn + (currentPlayhead - clip.startTime);
+
+              if (currentIsPlaying) {
+                if (media.paused) {
+                  media.currentTime = currentClipTime;
+                  media.play().catch(() => {});
+                } else if (Math.abs(media.currentTime - currentClipTime) > 0.35) {
+                  media.currentTime = currentClipTime;
+                }
+              } else {
+                if (!media.paused) {
+                  media.pause();
+                }
+                if (Math.abs(media.currentTime - currentClipTime) > 0.04) {
+                  media.currentTime = currentClipTime;
+                }
+              }
+            } else {
+              if (!media.paused) {
+                media.pause();
+              }
+            }
+          }
+        });
+      });
+
+      // 5. Draw all active clips with full formatting, shapes, text, transforms
+      activeClips.forEach((clip) => {
+        if (clip.asset.type === "audio") return;
+
+        drawClipToCanvas(
+          ctx,
+          clip,
+          currentPlayhead,
+          canvas.width,
+          canvas.height,
+          {
+            videoElements: videoRefs.current,
+            imageElements: imageElementsMap,
+          },
+        );
+      });
 
       animationFrameId = requestAnimationFrame(render);
     };
 
     animationFrameId = requestAnimationFrame(render);
-
     return () => cancelAnimationFrame(animationFrameId);
-  }, [dispatch]);
+  }, []);
+
+  // Scrubber seeking calculations
+  const seekFromMouseEvent = (e: React.MouseEvent | MouseEvent) => {
+    if (!scrubberRef.current) return;
+    const rect = scrubberRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+    const targetTime = ratio * duration;
+    dispatch(setPlayhead(targetTime));
+  };
+
+  const handleScrubberMouseDown = (e: React.MouseEvent) => {
+    setIsScrubbing(true);
+    seekFromMouseEvent(e);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      seekFromMouseEvent(moveEvent);
+    };
+
+    const handleMouseUp = () => {
+      setIsScrubbing(false);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const progressPercent = Math.min(100, Math.max(0, (playhead / duration) * 100));
 
   return (
-    <div className="fixed inset-0 bg-black z-[100] flex flex-col">
-      {/* Header */}
-      <div className="h-16 shrink-0 flex items-center justify-between px-6 bg-gradient-to-b from-black/50 to-transparent">
-        <h2 className="text-white font-medium">Project Preview</h2>
-        <button
-          onClick={onClose}
-          className="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
+    <div
+      ref={containerRef}
+      className="fixed inset-0 bg-black/95 z-[100] flex flex-col select-none text-white backdrop-blur-sm"
+    >
+      {/* Top Header Bar */}
+      <div className="h-14 shrink-0 flex items-center justify-between px-6 bg-gradient-to-b from-black/80 via-black/40 to-transparent z-10">
+        <div className="flex items-center gap-3">
+          <span className="font-semibold text-sm tracking-wide text-white">
+            Project Preview
+          </span>
+          <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-sky-500/20 text-sky-400 border border-sky-500/30">
+            1920 × 1080 • 16:9
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
           >
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+            {isFullscreen ? (
+              <Minimize2 className="w-4 h-4" />
+            ) : (
+              <Maximize2 className="w-4 h-4" />
+            )}
+          </button>
+          <button
+            onClick={handleClose}
+            title="Close Preview (Esc)"
+            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-red-500 text-white flex items-center justify-center transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      {/* Main Preview Area */}
-      <div className="flex-1 min-h-0 overflow-hidden flex items-center justify-center p-4">
+      {/* Center Canvas Viewport */}
+      <div className="flex-1 min-h-0 overflow-hidden flex items-center justify-center p-6 relative">
         <canvas
           ref={canvasRef}
           width={1920}
           height={1080}
-          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl bg-black"
+          className="max-w-full max-h-full aspect-video object-contain rounded-xl shadow-2xl bg-black border border-white/10"
         />
       </div>
 
-      {/* Controls */}
-      <div className="h-24 shrink-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-t from-black/50 to-transparent pb-6">
-        <div className="text-white font-mono text-xl tracking-wider">
-          {Math.floor(playhead / 60)}:
-          {(playhead % 60).toFixed(1).padStart(4, "0")}
+      {/* Bottom Controls Bar */}
+      <div className="shrink-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-6 pb-6 pt-2 flex flex-col gap-3 z-10">
+        {/* Interactive Scrubber Bar */}
+        <div
+          ref={scrubberRef}
+          onMouseDown={handleScrubberMouseDown}
+          className="w-full h-4 group flex items-center cursor-pointer relative"
+        >
+          <div className="w-full h-1.5 group-hover:h-2 bg-white/20 rounded-full relative transition-all overflow-hidden">
+            <div
+              className="h-full bg-sky-500 rounded-full transition-none"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          {/* Draggable thumb */}
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-lg border border-sky-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+            style={{
+              left: `calc(${progressPercent}% - 7px)`,
+              opacity: isScrubbing ? 1 : undefined,
+            }}
+          />
         </div>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => dispatch(setPlayhead(0))}
-            className="text-white hover:text-blue-400 transition-colors"
-          >
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <polygon points="19 20 9 12 19 4 19 20" />
-              <line x1="5" y1="19" x2="5" y2="5" />
-            </svg>
-          </button>
 
-          <button
-            onClick={() => dispatch(togglePlay())}
-            className="w-14 h-14 bg-white hover:bg-slate-200 text-black rounded-full flex items-center justify-center transition-transform hover:scale-105"
-          >
-            {isPlaying ? (
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <rect x="6" y="4" width="4" height="16" />
-                <rect x="14" y="4" width="4" height="16" />
-              </svg>
-            ) : (
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                className="ml-1"
-              >
-                <polygon points="5 3 19 12 5 21 5 3" />
-              </svg>
-            )}
-          </button>
+        {/* Playback Controls & Timecode */}
+        <div className="flex items-center justify-between">
+          {/* Left: Time display */}
+          <div className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
+            <span className="font-semibold text-white">
+              {formatTimeCode(playhead)}
+            </span>
+            <span className="text-white/40">/</span>
+            <span>{formatTimeCode(duration)}</span>
+          </div>
+
+          {/* Center: Playback Buttons */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => dispatch(setPlayhead(0))}
+              title="Reset to Start (Home)"
+              className="p-2 rounded-full text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => dispatch(setPlayhead(Math.max(0, playhead - 5)))}
+              title="Backward 5s (Shift+Left)"
+              className="p-2 rounded-full text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              <SkipBack className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => dispatch(togglePlay())}
+              title={isPlaying ? "Pause (Space)" : "Play (Space)"}
+              className="w-11 h-11 rounded-full bg-sky-500 hover:bg-sky-400 text-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+            >
+              {isPlaying ? (
+                <Pause className="w-5 h-5 fill-white" />
+              ) : (
+                <Play className="w-5 h-5 fill-white ml-0.5" />
+              )}
+            </button>
+
+            <button
+              onClick={() => dispatch(setPlayhead(Math.min(duration, playhead + 5)))}
+              title="Forward 5s (Shift+Right)"
+              className="p-2 rounded-full text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              <SkipForward className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Right: Quick Hint */}
+          <div className="text-[11px] text-slate-400 hidden sm:block">
+            Press <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">Space</kbd> to Play/Pause • <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">Esc</kbd> to Exit
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
+export default PreviewModal;
