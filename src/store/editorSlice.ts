@@ -51,13 +51,16 @@ const initialState: EditorState = {
 const normalizeTrackLayers = (sceneGraph: SceneGraph) => {
   if (!sceneGraph || !sceneGraph.tracks) return;
 
-  // Filter out empty tracks (0 clips)
+  // Strictly remove unused empty tracks (0 clips)
   const nonEmpTracks = sceneGraph.tracks.filter((track) => track.clips && track.clips.length > 0);
   if (nonEmpTracks.length > 0) {
     sceneGraph.tracks = nonEmpTracks;
-  } else if (sceneGraph.tracks.length > 2) {
-    // Keep at most 2 default empty tracks if project has 0 total clips
-    sceneGraph.tracks = sceneGraph.tracks.slice(0, 2);
+  } else {
+    // If project has 0 total clips, keep only 1 default track
+    sceneGraph.tracks = sceneGraph.tracks.slice(0, 1);
+    if (sceneGraph.tracks.length === 0) {
+      sceneGraph.tracks = [{ id: "track_video_default", type: "video", clips: [] }];
+    }
   }
 
   const overlayTracks: Track[] = [];
