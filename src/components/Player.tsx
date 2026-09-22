@@ -10,6 +10,7 @@ import { LayoutGrid } from "lucide-react";
 import { mediaManager } from "@/services/mediaManager";
 import { getAssetFrameSnapshots, saveAssetFrameSnapshots } from "@/services/indexedDbCache";
 import { drawClipToCanvas, getSortedActiveClips } from "@/services/elementRenderer";
+import { SelectLayoutModal } from "./SelectLayoutModal";
 
 interface PlayerProps {
   zoomScale?: number;
@@ -35,6 +36,8 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
   const reqRef = useRef<number>(0);
   const imageCache = useRef<Record<string, HTMLImageElement>>({});
 
+  const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
+
   // Interactive Canvas Bounding Box Drag State
   const [isDragging, setIsDragging] = useState(false);
   const [dragMode, setDragMode] = useState<"move" | "resize" | null>(null);
@@ -45,6 +48,105 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
     initialY: 0,
     initialScale: 1.0,
   });
+
+  // Apply layout grid presets to active media clips on canvas
+  const applyLayoutPreset = (layoutId: string) => {
+    if (!sceneGraph) return;
+    const mediaClips: { clip: Clip; trackId: string }[] = [];
+    sceneGraph.tracks.forEach((track) => {
+      track.clips.forEach((clip) => {
+        if (clip.asset?.type === "video" || clip.asset?.type === "image") {
+          mediaClips.push({ clip, trackId: track.id });
+        }
+      });
+    });
+
+    if (mediaClips.length === 0) return;
+
+    mediaClips.forEach(({ clip, trackId }, idx) => {
+      let x = 0;
+      let y = 0;
+      let width = 960;
+      let height = 540;
+
+      if (layoutId === "2:1 Horizontal") {
+        height = 270;
+        y = idx % 2 === 0 ? -135 : 135;
+      } else if (layoutId === "2:1 Vertical") {
+        width = 480;
+        x = idx % 2 === 0 ? -240 : 240;
+      } else if (layoutId === "3-Row") {
+        height = 180;
+        y = (idx % 3 - 1) * 180;
+      } else if (layoutId === "3-Column") {
+        width = 320;
+        x = (idx % 3 - 1) * 320;
+      } else if (layoutId === "4-Grid") {
+        width = 480;
+        height = 270;
+        x = idx % 2 === 0 ? -240 : 240;
+        y = Math.floor(idx / 2) % 2 === 0 ? -135 : 135;
+      } else if (layoutId === "Top-BottomSplit") {
+        if (idx === 0) {
+          y = -135;
+          height = 270;
+        } else {
+          y = 135;
+          height = 270;
+          width = 480;
+          x = idx % 2 === 1 ? -240 : 240;
+        }
+      } else if (layoutId === "Top2-Bottom1") {
+        if (idx === 2 || (mediaClips.length <= 2 && idx === 1)) {
+          y = 135;
+          height = 270;
+        } else {
+          y = -135;
+          height = 270;
+          width = 480;
+          x = idx % 2 === 0 ? -240 : 240;
+        }
+      } else if (layoutId === "Left2-Right1") {
+        if (idx === 2 || (mediaClips.length <= 2 && idx === 1)) {
+          x = 240;
+          width = 480;
+        } else {
+          x = -240;
+          width = 480;
+          height = 270;
+          y = idx % 2 === 0 ? -135 : 135;
+        }
+      } else if (layoutId === "Left1-Right2") {
+        if (idx === 0) {
+          x = -240;
+          width = 480;
+        } else {
+          x = 240;
+          width = 480;
+          height = 270;
+          y = idx % 2 === 1 ? -135 : 135;
+        }
+      }
+
+      dispatch(
+        updateClip({
+          trackId,
+          clipId: clip.id,
+          updates: {
+            transform: {
+              ...(clip.transform || {}),
+              x,
+              y,
+              width,
+              height,
+            },
+          },
+        })
+      );
+    });
+
+    dispatch(triggerAutosave());
+  };
 
   // Find selected clip
   let selectedClip: Clip | null = null;
@@ -544,7 +646,11 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center relative w-full h-full p-6 select-none overflow-hidden bg-slate-100 dark:bg-slate-900">
       {/* Top Left Layout Grid Icon Button */}
-      <button className="absolute top-6 left-6 w-9 h-9 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors z-20 cursor-pointer">
+      <button
+        onClick={() => setIsLayoutModalOpen(true)}
+        title="Select Grid Layout & Split Presets"
+        className="absolute top-6 left-6 w-9 h-9 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors z-20 cursor-pointer"
+      >
         <LayoutGrid className="w-5 h-5" />
       </button>
 
@@ -613,6 +719,16 @@ export function Player({ zoomScale = 0.6 }: PlayerProps) {
           </div>
         )}
       </div>
+
+      {/* Grid Layout & Split Presets Modal */}
+      <SelectLayoutModal
+        isOpen={isLayoutModalOpen}
+        onClose={() => setIsLayoutModalOpen(false)}
+        onSelectLayout={(layoutId) => {
+          applyLayoutPreset(layoutId);
+          setIsLayoutModalOpen(false);
+        }}
+      />
     </div>
   );
 }
