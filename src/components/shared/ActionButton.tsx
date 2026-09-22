@@ -3,7 +3,7 @@ import type { LucideIcon } from "lucide-react";
 interface ActionButtonProps {
   onClick: () => void;
   label: string;
-  icon: LucideIcon;
+  icon?: LucideIcon;
   disabled?: boolean;
   disabledTitle?: string;
   title?: string;
@@ -89,7 +89,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({
         ${className}
       `}
     >
-      <Icon className={iconSizeClasses[size]} />
+      {Icon && <Icon className={iconSizeClasses[size]} />}
       <span>{label}</span>
     </button>
   );

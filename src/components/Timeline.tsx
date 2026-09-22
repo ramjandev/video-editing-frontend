@@ -19,10 +19,10 @@ const pixelsPerSecond = 200 / 60; // 200px per minute scale matching Figma
 
 export function Timeline() {
   const dispatch = useAppDispatch();
-  const sceneGraph = useAppSelector((state) => state.editor.sceneGraph);
-  const selectedClipId = useAppSelector((state) => state.editor.selectedClipId);
-  const playhead = useAppSelector((state) => state.editor.playhead);
-  const isPlaying = useAppSelector((state) => state.editor.isPlaying);
+  const { sceneGraph, selectedClipId, playhead, isPlaying } = useAppSelector(
+    (state) => state.editor,
+  );
+
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -34,7 +34,6 @@ export function Timeline() {
     originalTrackId: string;
   } | null>(null);
 
-  // Smooth playhead dragging & auto-scrolling with RAF coalescing
   const handlePlayheadMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
     let rafId: number | null = null;
@@ -55,7 +54,6 @@ export function Timeline() {
         let newX = moveEvent.clientX - rect.left + container.scrollLeft - 48;
         newX = Math.max(0, newX);
 
-        // Smooth auto-scroll when dragging near viewport edges
         if (moveEvent.clientX > rect.right - 50) {
           container.scrollLeft += 15;
         } else if (moveEvent.clientX < rect.left + 80) {
@@ -69,7 +67,6 @@ export function Timeline() {
       }
     };
 
-    // Immediate update on initial click down
     updatePlayhead(e.nativeEvent);
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
@@ -100,7 +97,6 @@ export function Timeline() {
   const durationRef = useRef(duration);
   durationRef.current = duration;
 
-  // Playhead timer animation loop (smooth 60fps)
   useEffect(() => {
     let animationFrameId: number;
     if (isPlaying) {
@@ -153,6 +149,7 @@ export function Timeline() {
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
         e.preventDefault();
         dispatch(undo());
+        dispatch(triggerAutosave());
         return;
       }
       if (
@@ -161,6 +158,7 @@ export function Timeline() {
       ) {
         e.preventDefault();
         dispatch(redo());
+        dispatch(triggerAutosave());
         return;
       }
     };
