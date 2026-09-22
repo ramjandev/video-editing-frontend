@@ -31,6 +31,38 @@ import { useEffect, useRef, useState } from "react";
 
 const pixelsPerSecond = 200 / 60; // 200px per minute scale matching Figma
 
+// ActionButton helper component for Timeline header buttons
+function ActionButton({
+  onClick,
+  title,
+  icon: Icon,
+  label,
+  color = "sky",
+}: {
+  onClick: () => void;
+  title?: string;
+  icon: any;
+  label: string;
+  color?: "sky" | "emerald";
+  size?: "sm" | "md";
+}) {
+  const bgClass =
+    color === "emerald"
+      ? "bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800"
+      : "bg-sky-500 hover:bg-sky-600 active:bg-sky-700";
+
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`px-3 py-1 rounded-lg ${bgClass} text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs`}
+    >
+      <Icon className="w-3.5 h-3.5" />
+      <span>{label}</span>
+    </button>
+  );
+}
+
 // Playhead Indicator (Figma Style)
 function PlayheadIndicator({
   onPlayheadMouseDown,
@@ -412,31 +444,28 @@ export function Timeline() {
             <Home className="w-4 h-4" />
           </button>
 
-          {/* Track Creation & Page Badges Row */}
           <div className="flex items-center gap-2 px-3 py-1">
-            <button
+            <ActionButton
               onClick={() => {
                 dispatch(addTrack({ type: "video" }));
                 dispatch(triggerAutosave());
               }}
               title="Add New Video Track"
-              className="px-3 py-1 rounded-lg bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Video Track</span>
-            </button>
-
-            <button
+              icon={Plus}
+              label="Add Video Track"
+              size="sm"
+            />
+            <ActionButton
               onClick={() => {
                 dispatch(addTrack({ type: "audio" }));
                 dispatch(triggerAutosave());
               }}
+              color="emerald"
               title="Add New Audio Track"
-              className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Audio Track</span>
-            </button>
+              icon={Plus}
+              label="Add Audio Track"
+              size="sm"
+            />
           </div>
         </div>
 
