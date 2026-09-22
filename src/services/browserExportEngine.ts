@@ -154,7 +154,7 @@ export async function exportInBrowser(
 
     // 3. Preload media assets
     callbacks.onProgress(5, 'Loading media assets...', null);
-    const videoElements = await preloadAssets(sceneGraph);
+    const { videoElements, imageElements } = await preloadAssets(sceneGraph);
     if (currentId !== activeExportId) return;
 
     // 4. Render frame-by-frame
@@ -225,7 +225,7 @@ export async function exportInBrowser(
 
       // Draw all clips in painter's order (video first, text last on top)
       for (const clip of activeClips) {
-        drawClip(ctx, clip, currentTime, width, height, videoElements);
+        drawClip(ctx, clip, currentTime, width, height, videoElements, imageElements);
       }
 
       // Feed frame to hardware encoder
@@ -277,8 +277,12 @@ export async function exportInBrowser(
 // Helpers
 // ──────────────────────────────────────────────────────────────
 
-async function preloadAssets(sceneGraph: any): Promise<Map<string, HTMLVideoElement>> {
+async function preloadAssets(sceneGraph: any): Promise<{
+  videoElements: Map<string, HTMLVideoElement>;
+  imageElements: Map<string, HTMLImageElement>;
+}> {
   const videoElements = new Map<string, HTMLVideoElement>();
+  const imageElements = new Map<string, HTMLImageElement>();
   const loadPromises: Promise<void>[] = [];
 
   for (const track of sceneGraph.tracks || []) {
@@ -294,26 +298,37 @@ async function preloadAssets(sceneGraph: any): Promise<Map<string, HTMLVideoElem
           new Promise<void>((resolve) => {
             v.onloadeddata = () => resolve();
             v.onerror = () => resolve();
-            setTimeout(resolve, 5000); // 5s timeout per asset
+            setTimeout(resolve, 5000);
           }),
         );
 
         v.load();
         videoElements.set(clip.assetId, v);
+        if (clip.id) videoElements.set(clip.id, v);
+      } else if (clip.asset?.type === 'image') {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = getMediaUrl(clip.asset.original_url || clip.asset.preview_url);
+
+        loadPromises.push(
+          new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            setTimeout(resolve, 3000);
+          }),
+        );
+
+        imageElements.set(clip.assetId, img);
+        if (clip.id) imageElements.set(clip.id, img);
       }
     }
   }
 
   await Promise.all(loadPromises);
-  return videoElements;
+  return { videoElements, imageElements };
 }
 
-
-
 import { drawClipToCanvas, getSortedActiveClips } from './elementRenderer';
-
-
-
 
 function drawClip(
   ctx: CanvasRenderingContext2D,
@@ -322,9 +337,11 @@ function drawClip(
   canvasWidth: number,
   canvasHeight: number,
   videoElements: Map<string, HTMLVideoElement>,
+  imageElements: Map<string, HTMLImageElement>,
 ): void {
   drawClipToCanvas(ctx, clip, currentTime, canvasWidth, canvasHeight, {
     videoElements,
+    imageElements,
   });
 }
 

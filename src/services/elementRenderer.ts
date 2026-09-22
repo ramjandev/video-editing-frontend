@@ -220,7 +220,6 @@ export function drawClipToCanvas(
       const innerRadius = outerRadius / 2.2;
       let rot = (Math.PI / 2) * 3;
       let step = Math.PI / spikes;
-
       ctx.moveTo(0, -outerRadius);
       for (let i = 0; i < spikes; i++) {
         ctx.lineTo(Math.cos(rot) * outerRadius, Math.sin(rot) * outerRadius);
@@ -230,13 +229,16 @@ export function drawClipToCanvas(
       }
       ctx.closePath();
     } else if (shapeType === "Line" || shapeType === "line") {
+      ctx.strokeStyle = stroke || fill || "#38bdf8";
+      ctx.lineWidth = strokeW > 0 ? strokeW : 4;
       ctx.moveTo(-halfW, 0);
       ctx.lineTo(halfW, 0);
-    }
-
-    ctx.fill();
-    if (stroke && strokeW > 0) {
       ctx.stroke();
+    } else {
+      ctx.fill();
+      if (stroke && strokeW > 0) {
+        ctx.stroke();
+      }
     }
   }
 
