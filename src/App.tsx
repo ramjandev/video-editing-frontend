@@ -1,7 +1,7 @@
 import { Download, Eye } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AdminPanel } from "./components/AdminPanel";
-import { AssetLibrary } from "./components/AssetLibrary";
+import AssetLibrary from "./components/AssetLibrary";
 import VideoStudio from "./components/auth/VideoStudio";
 import { AuthModal } from "./components/AuthModal";
 import AdminButton from "./components/editor/AdminButton";

@@ -1,32 +1,45 @@
-import { useState } from "react";
-import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { updateClip, setSelectedClip, deleteClip, separateAudio, duplicateClip } from "@/store/editorSlice";
-import { triggerAutosave } from "@/store/thunks";
-import { SelectLayoutModal } from "./SelectLayoutModal";
-import { AnimationModal } from "./AnimationModal";
-import type { Clip, TransformProps, TextStyles, ShapeStyles, QrStyles, SliderStyles, AnimationProps } from "@/types";
 import {
-  Copy,
-  ArrowRight,
+  deleteClip,
+  duplicateClip,
+  separateAudio,
+  setSelectedClip,
+  updateClip,
+} from "@/store/editorSlice";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { triggerAutosave } from "@/store/thunks";
+import type {
+  AnimationProps,
+  Clip,
+  QrStyles,
+  ShapeStyles,
+  SliderStyles,
+  TextStyles,
+  TransformProps,
+} from "@/types";
+import {
   ArrowLeft,
-  Trash2,
-  Plus,
-  Volume2,
-  Music,
-  ChevronRight,
+  ArrowRight,
   ChevronLeft,
+  ChevronRight,
+  Copy,
   Move,
-  Sparkles,
-  Type,
+  Music,
+  Plus,
   QrCode as QrIcon,
-  Square,
   SlidersHorizontal,
+  Sparkles,
+  Square,
+  Trash2,
+  Type,
+  Volume2,
 } from "lucide-react";
+import { useState } from "react";
+import { AnimationModal } from "./AnimationModal";
+import { SelectLayoutModal } from "./SelectLayoutModal";
 
 export function PropertiesPanel() {
   const dispatch = useAppDispatch();
-  const selectedClipId = useAppSelector((s) => s.editor.selectedClipId);
-  const sceneGraph = useAppSelector((s) => s.editor.sceneGraph);
+  const { selectedClipId, sceneGraph } = useAppSelector((s) => s.editor);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
@@ -62,7 +75,7 @@ export function PropertiesPanel() {
         trackId: selectedTrackId,
         clipId: selectedClip.id,
         updates: { transform: newTransform },
-      })
+      }),
     );
     dispatch(triggerAutosave());
   };
@@ -70,13 +83,16 @@ export function PropertiesPanel() {
   const handleUpdateTextStyles = (updates: Partial<TextStyles>) => {
     if (!selectedClip || !selectedTrackId) return;
     const newStyles = { ...(selectedClip.textStyles || {}), ...updates };
-    const newAsset = { ...selectedClip.asset, content: updates.content ?? selectedClip.asset.content };
+    const newAsset = {
+      ...selectedClip.asset,
+      content: updates.content ?? selectedClip.asset.content,
+    };
     dispatch(
       updateClip({
         trackId: selectedTrackId,
         clipId: selectedClip.id,
         updates: { textStyles: newStyles, asset: newAsset },
-      })
+      }),
     );
     dispatch(triggerAutosave());
   };
@@ -84,13 +100,16 @@ export function PropertiesPanel() {
   const handleUpdateShapeStyles = (updates: Partial<ShapeStyles>) => {
     if (!selectedClip || !selectedTrackId) return;
     const newStyles = { ...(selectedClip.shapeStyles || {}), ...updates };
-    const newAsset = { ...selectedClip.asset, content: updates.shapeType ?? selectedClip.asset.content };
+    const newAsset = {
+      ...selectedClip.asset,
+      content: updates.shapeType ?? selectedClip.asset.content,
+    };
     dispatch(
       updateClip({
         trackId: selectedTrackId,
         clipId: selectedClip.id,
         updates: { shapeStyles: newStyles, asset: newAsset },
-      })
+      }),
     );
     dispatch(triggerAutosave());
   };
@@ -98,13 +117,16 @@ export function PropertiesPanel() {
   const handleUpdateQrStyles = (updates: Partial<QrStyles>) => {
     if (!selectedClip || !selectedTrackId) return;
     const newStyles = { ...(selectedClip.qrStyles || {}), ...updates };
-    const newAsset = { ...selectedClip.asset, content: updates.qrContent ?? selectedClip.asset.content };
+    const newAsset = {
+      ...selectedClip.asset,
+      content: updates.qrContent ?? selectedClip.asset.content,
+    };
     dispatch(
       updateClip({
         trackId: selectedTrackId,
         clipId: selectedClip.id,
         updates: { qrStyles: newStyles, asset: newAsset },
-      })
+      }),
     );
     dispatch(triggerAutosave());
   };
@@ -117,7 +139,7 @@ export function PropertiesPanel() {
         trackId: selectedTrackId,
         clipId: selectedClip.id,
         updates: { sliderStyles: newStyles },
-      })
+      }),
     );
     dispatch(triggerAutosave());
   };
@@ -130,7 +152,7 @@ export function PropertiesPanel() {
         trackId: selectedTrackId,
         clipId: selectedClip.id,
         updates: { animation: newAnim },
-      })
+      }),
     );
     dispatch(triggerAutosave());
   };
@@ -142,7 +164,7 @@ export function PropertiesPanel() {
           trackId: selectedTrackId,
           clipId: selectedClip.id,
           updates: { volume: newVolume, muted: newVolume === 0 },
-        })
+        }),
       );
       dispatch(triggerAutosave());
     }
@@ -171,7 +193,7 @@ export function PropertiesPanel() {
           startTime: selectedClip.startTime + 1,
           endTime: selectedClip.endTime + 1,
         },
-      })
+      }),
     );
     dispatch(triggerAutosave());
   };
@@ -186,7 +208,7 @@ export function PropertiesPanel() {
           startTime: Math.max(0, selectedClip.startTime - 1),
           endTime: Math.max(1, selectedClip.endTime - 1),
         },
-      })
+      }),
     );
     dispatch(triggerAutosave());
   };
@@ -202,20 +224,34 @@ export function PropertiesPanel() {
       <div className="relative shrink-0 flex h-full z-20">
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          title={isCollapsed ? "Expand Properties Panel" : "Collapse Properties Panel"}
+          title={
+            isCollapsed
+              ? "Expand Properties Panel"
+              : "Collapse Properties Panel"
+          }
           className="absolute top-1/2 -translate-y-1/2 -left-4 z-40 w-4 h-14 bg-white dark:bg-slate-900 border border-r-0 border-slate-200 dark:border-slate-800 rounded-l-lg flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shadow-md cursor-pointer transition-colors"
         >
-          {isCollapsed ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          {isCollapsed ? (
+            <ChevronLeft className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5" />
+          )}
         </button>
 
         <div
           className={`transition-all duration-300 ease-in-out h-full bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-lg text-slate-800 dark:text-slate-100 select-none flex flex-col overflow-y-auto ${
-            isCollapsed ? "w-0 opacity-0 overflow-hidden border-l-0" : "w-80 opacity-100 p-4"
+            isCollapsed
+              ? "w-0 opacity-0 overflow-hidden border-l-0"
+              : "w-80 opacity-100 p-4"
           }`}
         >
           <div className="pb-4 border-b border-slate-100 dark:border-slate-800/80">
-            <h3 className="font-bold text-base text-slate-900 dark:text-white">Canvas Properties</h3>
-            <p className="text-xs text-slate-400 mt-1">Select any element on canvas or timeline to customize properties.</p>
+            <h3 className="font-bold text-base text-slate-900 dark:text-white">
+              Canvas Properties
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Select any element on canvas or timeline to customize properties.
+            </p>
           </div>
 
           <div className="pt-4 space-y-4 text-xs">
@@ -227,7 +263,9 @@ export function PropertiesPanel() {
             </div>
 
             <div className="space-y-1">
-              <span className="text-slate-500 font-medium">Timeline Duration</span>
+              <span className="text-slate-500 font-medium">
+                Timeline Duration
+              </span>
               <div className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 font-mono font-semibold text-slate-700 dark:text-slate-200">
                 {(sceneGraph?.duration ?? 0).toFixed(1)}s
               </div>
@@ -246,30 +284,47 @@ export function PropertiesPanel() {
   }
 
   const clipType = selectedClip.asset?.type || "video";
-  const contentName = selectedClip.asset?.content || selectedClip.asset?.public_id || "Element";
+  const contentName =
+    selectedClip.asset?.content || selectedClip.asset?.public_id || "Element";
 
   return (
     <div className="relative shrink-0 flex h-full z-20">
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        title={isCollapsed ? "Expand Properties Panel" : "Collapse Properties Panel"}
+        title={
+          isCollapsed ? "Expand Properties Panel" : "Collapse Properties Panel"
+        }
         className="absolute top-1/2 -translate-y-1/2 -left-4 z-40 w-4 h-14 bg-white dark:bg-slate-900 border border-r-0 border-slate-200 dark:border-slate-800 rounded-l-lg flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shadow-md cursor-pointer transition-colors"
       >
-        {isCollapsed ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        {isCollapsed ? (
+          <ChevronLeft className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5" />
+        )}
       </button>
 
       <div
         className={`transition-all duration-300 ease-in-out h-full bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-lg text-slate-800 dark:text-slate-100 select-none flex flex-col overflow-y-auto ${
-          isCollapsed ? "w-0 opacity-0 overflow-hidden border-l-0" : "w-80 opacity-100"
+          isCollapsed
+            ? "w-0 opacity-0 overflow-hidden border-l-0"
+            : "w-80 opacity-100"
         }`}
       >
         {/* 1. Header Title */}
         <div className="p-4 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
-            {clipType === "text" && <Type className="w-4 h-4 text-sky-500 shrink-0" />}
-            {clipType === "qr" && <QrIcon className="w-4 h-4 text-sky-500 shrink-0" />}
-            {clipType === "shape" && <Square className="w-4 h-4 text-sky-500 shrink-0" />}
-            {clipType === "slider" && <SlidersHorizontal className="w-4 h-4 text-sky-500 shrink-0" />}
+            {clipType === "text" && (
+              <Type className="w-4 h-4 text-sky-500 shrink-0" />
+            )}
+            {clipType === "qr" && (
+              <QrIcon className="w-4 h-4 text-sky-500 shrink-0" />
+            )}
+            {clipType === "shape" && (
+              <Square className="w-4 h-4 text-sky-500 shrink-0" />
+            )}
+            {clipType === "slider" && (
+              <SlidersHorizontal className="w-4 h-4 text-sky-500 shrink-0" />
+            )}
             <h3 className="font-bold text-base text-slate-900 dark:text-white truncate">
               {contentName}
             </h3>
@@ -330,48 +385,72 @@ export function PropertiesPanel() {
           {clipType === "text" && (
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Text Content</label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Text Content
+                </label>
                 <textarea
                   rows={2}
-                  value={textStyles.content ?? selectedClip.asset?.content ?? "Title Goes There"}
-                  onChange={(e) => handleUpdateTextStyles({ content: e.target.value })}
+                  value={
+                    textStyles.content ??
+                    selectedClip.asset?.content ??
+                    "Title Goes There"
+                  }
+                  onChange={(e) =>
+                    handleUpdateTextStyles({ content: e.target.value })
+                  }
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-sky-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Text Color</label>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Text Color
+                  </label>
                   <div className="flex items-center gap-2 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
                     <input
                       type="text"
                       value={textStyles.color || "#ffffff"}
-                      onChange={(e) => handleUpdateTextStyles({ color: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateTextStyles({ color: e.target.value })
+                      }
                       className="w-full text-xs font-mono bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none"
                     />
                     <input
                       type="color"
                       value={textStyles.color || "#ffffff"}
-                      onChange={(e) => handleUpdateTextStyles({ color: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateTextStyles({ color: e.target.value })
+                      }
                       className="w-6 h-6 rounded border-none cursor-pointer"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Background</label>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Background
+                  </label>
                   <div className="flex items-center gap-2 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
                     <input
                       type="text"
                       value={textStyles.backgroundColor || ""}
                       placeholder="None"
-                      onChange={(e) => handleUpdateTextStyles({ backgroundColor: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateTextStyles({
+                          backgroundColor: e.target.value,
+                        })
+                      }
                       className="w-full text-xs font-mono bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none"
                     />
                     <input
                       type="color"
                       value={textStyles.backgroundColor || "#000000"}
-                      onChange={(e) => handleUpdateTextStyles({ backgroundColor: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateTextStyles({
+                          backgroundColor: e.target.value,
+                        })
+                      }
                       className="w-6 h-6 rounded border-none cursor-pointer"
                     />
                   </div>
@@ -380,10 +459,14 @@ export function PropertiesPanel() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Font Family</label>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Font Family
+                  </label>
                   <select
                     value={textStyles.fontFamily || "Inter"}
-                    onChange={(e) => handleUpdateTextStyles({ fontFamily: e.target.value })}
+                    onChange={(e) =>
+                      handleUpdateTextStyles({ fontFamily: e.target.value })
+                    }
                     className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
                   >
                     <option value="Inter">Inter</option>
@@ -397,10 +480,14 @@ export function PropertiesPanel() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Font Weight</label>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Font Weight
+                  </label>
                   <select
                     value={textStyles.fontWeight || "Bold"}
-                    onChange={(e) => handleUpdateTextStyles({ fontWeight: e.target.value })}
+                    onChange={(e) =>
+                      handleUpdateTextStyles({ fontWeight: e.target.value })
+                    }
                     className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
                   >
                     <option value="Normal">Normal</option>
@@ -421,7 +508,11 @@ export function PropertiesPanel() {
                   min={12}
                   max={120}
                   value={textStyles.fontSize || 36}
-                  onChange={(e) => handleUpdateTextStyles({ fontSize: parseInt(e.target.value) })}
+                  onChange={(e) =>
+                    handleUpdateTextStyles({
+                      fontSize: parseInt(e.target.value),
+                    })
+                  }
                   className="w-full accent-sky-500 cursor-pointer"
                 />
               </div>
@@ -432,11 +523,19 @@ export function PropertiesPanel() {
           {clipType === "qr" && (
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">QR Target URL / Text</label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  QR Target URL / Text
+                </label>
                 <input
                   type="text"
-                  value={qrStyles.qrContent || selectedClip.asset?.content || "https://example.com"}
-                  onChange={(e) => handleUpdateQrStyles({ qrContent: e.target.value })}
+                  value={
+                    qrStyles.qrContent ||
+                    selectedClip.asset?.content ||
+                    "https://example.com"
+                  }
+                  onChange={(e) =>
+                    handleUpdateQrStyles({ qrContent: e.target.value })
+                  }
                   placeholder="https://mysite.com"
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-sky-500"
                 />
@@ -444,36 +543,56 @@ export function PropertiesPanel() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">QR Modules Color</label>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    QR Modules Color
+                  </label>
                   <div className="flex items-center gap-2 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
                     <input
                       type="text"
                       value={qrStyles.foregroundColor || "#000000"}
-                      onChange={(e) => handleUpdateQrStyles({ foregroundColor: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateQrStyles({
+                          foregroundColor: e.target.value,
+                        })
+                      }
                       className="w-full text-xs font-mono bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none"
                     />
                     <input
                       type="color"
                       value={qrStyles.foregroundColor || "#000000"}
-                      onChange={(e) => handleUpdateQrStyles({ foregroundColor: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateQrStyles({
+                          foregroundColor: e.target.value,
+                        })
+                      }
                       className="w-6 h-6 rounded border-none cursor-pointer"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Background</label>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Background
+                  </label>
                   <div className="flex items-center gap-2 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
                     <input
                       type="text"
                       value={qrStyles.backgroundColor || "#ffffff"}
-                      onChange={(e) => handleUpdateQrStyles({ backgroundColor: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateQrStyles({
+                          backgroundColor: e.target.value,
+                        })
+                      }
                       className="w-full text-xs font-mono bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none"
                     />
                     <input
                       type="color"
                       value={qrStyles.backgroundColor || "#ffffff"}
-                      onChange={(e) => handleUpdateQrStyles({ backgroundColor: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateQrStyles({
+                          backgroundColor: e.target.value,
+                        })
+                      }
                       className="w-6 h-6 rounded border-none cursor-pointer"
                     />
                   </div>
@@ -486,10 +605,20 @@ export function PropertiesPanel() {
           {clipType === "shape" && (
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Shape Type</label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Shape Type
+                </label>
                 <select
-                  value={shapeStyles.shapeType || (selectedClip.asset?.content as any) || "Rectangle"}
-                  onChange={(e) => handleUpdateShapeStyles({ shapeType: e.target.value as any })}
+                  value={
+                    shapeStyles.shapeType ||
+                    (selectedClip.asset?.content as any) ||
+                    "Rectangle"
+                  }
+                  onChange={(e) =>
+                    handleUpdateShapeStyles({
+                      shapeType: e.target.value as any,
+                    })
+                  }
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
                 >
                   <option value="Rectangle">Rectangle</option>
@@ -502,36 +631,48 @@ export function PropertiesPanel() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Fill Color</label>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Fill Color
+                  </label>
                   <div className="flex items-center gap-2 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
                     <input
                       type="text"
                       value={shapeStyles.fillColor || "#38bdf8"}
-                      onChange={(e) => handleUpdateShapeStyles({ fillColor: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateShapeStyles({ fillColor: e.target.value })
+                      }
                       className="w-full text-xs font-mono bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none"
                     />
                     <input
                       type="color"
                       value={shapeStyles.fillColor || "#38bdf8"}
-                      onChange={(e) => handleUpdateShapeStyles({ fillColor: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateShapeStyles({ fillColor: e.target.value })
+                      }
                       className="w-6 h-6 rounded border-none cursor-pointer"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Stroke Color</label>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Stroke Color
+                  </label>
                   <div className="flex items-center gap-2 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
                     <input
                       type="text"
                       value={shapeStyles.strokeColor || "#ffffff"}
-                      onChange={(e) => handleUpdateShapeStyles({ strokeColor: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateShapeStyles({ strokeColor: e.target.value })
+                      }
                       className="w-full text-xs font-mono bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none"
                     />
                     <input
                       type="color"
                       value={shapeStyles.strokeColor || "#ffffff"}
-                      onChange={(e) => handleUpdateShapeStyles({ strokeColor: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateShapeStyles({ strokeColor: e.target.value })
+                      }
                       className="w-6 h-6 rounded border-none cursor-pointer"
                     />
                   </div>
@@ -541,14 +682,31 @@ export function PropertiesPanel() {
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
                   <span>Stroke / Line Thickness</span>
-                  <span>{shapeStyles.strokeWidth ?? (shapeStyles.shapeType === "line" || (shapeStyles.shapeType as any) === "Line" ? 4 : 0)}px</span>
+                  <span>
+                    {shapeStyles.strokeWidth ??
+                      (shapeStyles.shapeType === "line" ||
+                      (shapeStyles.shapeType as any) === "Line"
+                        ? 4
+                        : 0)}
+                    px
+                  </span>
                 </div>
                 <input
                   type="range"
                   min={0}
                   max={40}
-                  value={shapeStyles.strokeWidth ?? (shapeStyles.shapeType === "line" || (shapeStyles.shapeType as any) === "Line" ? 4 : 0)}
-                  onChange={(e) => handleUpdateShapeStyles({ strokeWidth: parseInt(e.target.value) })}
+                  value={
+                    shapeStyles.strokeWidth ??
+                    (shapeStyles.shapeType === "line" ||
+                    (shapeStyles.shapeType as any) === "Line"
+                      ? 4
+                      : 0)
+                  }
+                  onChange={(e) =>
+                    handleUpdateShapeStyles({
+                      strokeWidth: parseInt(e.target.value),
+                    })
+                  }
                   className="w-full accent-sky-500 cursor-pointer"
                 />
               </div>
@@ -559,10 +717,16 @@ export function PropertiesPanel() {
           {clipType === "slider" && (
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Slide Transition</label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Slide Transition
+                </label>
                 <select
                   value={sliderStyles.transition || "fade"}
-                  onChange={(e) => handleUpdateSliderStyles({ transition: e.target.value as any })}
+                  onChange={(e) =>
+                    handleUpdateSliderStyles({
+                      transition: e.target.value as any,
+                    })
+                  }
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
                 >
                   <option value="fade">Cross Fade</option>
@@ -583,7 +747,11 @@ export function PropertiesPanel() {
                   max={10}
                   step={0.5}
                   value={sliderStyles.slideDuration || 2.5}
-                  onChange={(e) => handleUpdateSliderStyles({ slideDuration: parseFloat(e.target.value) })}
+                  onChange={(e) =>
+                    handleUpdateSliderStyles({
+                      slideDuration: parseFloat(e.target.value),
+                    })
+                  }
                   className="w-full accent-sky-500 cursor-pointer"
                 />
               </div>
@@ -594,7 +762,8 @@ export function PropertiesPanel() {
           {clipType !== "audio" && (
             <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800/80">
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Move className="w-3.5 h-3.5 text-sky-500" /> Transform & Position
+                <Move className="w-3.5 h-3.5 text-sky-500" /> Transform &
+                Position
               </label>
 
               <div className="grid grid-cols-2 gap-3">
@@ -603,7 +772,11 @@ export function PropertiesPanel() {
                   <input
                     type="number"
                     value={transform.x ?? 0}
-                    onChange={(e) => handleUpdateTransform({ x: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) =>
+                      handleUpdateTransform({
+                        x: parseFloat(e.target.value) || 0,
+                      })
+                    }
                     className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
                   />
                 </div>
@@ -613,7 +786,11 @@ export function PropertiesPanel() {
                   <input
                     type="number"
                     value={transform.y ?? 0}
-                    onChange={(e) => handleUpdateTransform({ y: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) =>
+                      handleUpdateTransform({
+                        y: parseFloat(e.target.value) || 0,
+                      })
+                    }
                     className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
                   />
                 </div>
@@ -630,7 +807,9 @@ export function PropertiesPanel() {
                   max={3.0}
                   step={0.05}
                   value={transform.scale ?? 1.0}
-                  onChange={(e) => handleUpdateTransform({ scale: parseFloat(e.target.value) })}
+                  onChange={(e) =>
+                    handleUpdateTransform({ scale: parseFloat(e.target.value) })
+                  }
                   className="w-full accent-sky-500 cursor-pointer"
                 />
               </div>
@@ -645,7 +824,11 @@ export function PropertiesPanel() {
                   min={0}
                   max={360}
                   value={transform.rotation ?? 0}
-                  onChange={(e) => handleUpdateTransform({ rotation: parseInt(e.target.value) })}
+                  onChange={(e) =>
+                    handleUpdateTransform({
+                      rotation: parseInt(e.target.value),
+                    })
+                  }
                   className="w-full accent-sky-500 cursor-pointer"
                 />
               </div>
@@ -659,13 +842,20 @@ export function PropertiesPanel() {
                 <span className="flex items-center gap-1.5">
                   <Volume2 className="w-4 h-4 text-sky-500" /> Volume
                 </span>
-                <span>{selectedClip.volume !== undefined ? selectedClip.volume : 100}%</span>
+                <span>
+                  {selectedClip.volume !== undefined
+                    ? selectedClip.volume
+                    : 100}
+                  %
+                </span>
               </div>
               <input
                 type="range"
                 min={0}
                 max={100}
-                value={selectedClip.volume !== undefined ? selectedClip.volume : 100}
+                value={
+                  selectedClip.volume !== undefined ? selectedClip.volume : 100
+                }
                 onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
                 className="w-full accent-sky-500 cursor-pointer"
               />
@@ -676,7 +866,10 @@ export function PropertiesPanel() {
           {clipType !== "audio" && (
             <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
               <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-sky-500" /> Animation: <span className="capitalize font-normal text-slate-400">{animation.type || "None"}</span>
+                <Sparkles className="w-3.5 h-3.5 text-sky-500" /> Animation:{" "}
+                <span className="capitalize font-normal text-slate-400">
+                  {animation.type || "None"}
+                </span>
               </span>
               <button
                 onClick={() => setIsAnimationModalOpen(true)}
