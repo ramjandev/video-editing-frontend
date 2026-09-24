@@ -152,16 +152,62 @@ export interface Project {
   latestVersion?: number;
 }
 
+export type NodeState =
+  | 'ACTIVE'
+  | 'IDLE_CANDIDATE'
+  | 'IDLE'
+  | 'RENDERING'
+  | 'PREEMPTED'
+  | 'PAUSED'
+  | 'OFFLINE';
+
+export interface ClusterWorkerNode {
+  socketId: string;
+  userName: string;
+  userId?: string;
+  state: NodeState;
+  status: 'IDLE' | 'BUSY';
+  activityScore: number;
+  idleSeconds: number;
+  cores: number;
+  memoryGb?: number;
+  currentJobId?: string;
+  currentSegmentIndex?: number;
+  jobsCompleted: number;
+  lastHeartbeat: number;
+}
+
+export type ClusterLogLevel = 'info' | 'warn' | 'error' | 'success';
+
+export interface ClusterLogEntry {
+  id: string;
+  timestamp: number;
+  workerId: string;
+  userName: string;
+  eventType:
+    | 'NODE_REGISTERED'
+    | 'STATE_CHANGE'
+    | 'HEARTBEAT'
+    | 'PREEMPTED'
+    | 'JOB_ASSIGNED'
+    | 'JOB_PROGRESS'
+    | 'JOB_COMPLETED'
+    | 'JOB_FAILED'
+    | 'NODE_DISCONNECTED'
+    | 'NODE_TIMEOUT';
+  level: ClusterLogLevel;
+  message: string;
+  metadata?: Record<string, any>;
+}
+
 export interface ClusterStats {
   totalWorkers: number;
   idleWorkers: number;
+  candidateWorkers?: number;
+  activeWorkers?: number;
   busyWorkers: number;
+  preemptedWorkers?: number;
+  offlineWorkers?: number;
   totalSegmentsRendered: number;
-  workers?: Array<{
-    socketId: string;
-    userName: string;
-    status: 'IDLE' | 'BUSY';
-    cores: number;
-    jobsCompleted: number;
-  }>;
+  workers?: ClusterWorkerNode[];
 }
