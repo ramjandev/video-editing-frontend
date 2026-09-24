@@ -2,6 +2,7 @@ import { io, Socket } from 'socket.io-client';
 import { store } from '@/store';
 import {
   setConnectionStatus,
+  setNodeTelemetry,
   setCurrentTask,
   updateTaskProgress,
   completeCurrentTask,
@@ -9,11 +10,15 @@ import {
   addWorkerLog,
 } from '@/store/workerSlice';
 import { WS_URL, getMediaUrl } from '@/lib/api';
+import { idleEngine } from './idleEngine';
+import type { NodeState } from '@/types';
 
 class RenderWorkerService {
   private socket: Socket | null = null;
   private heartbeatInterval: any = null;
   private isProcessing = false;
+  private activeJobPayload: any = null;
+  private lastCheckpoint: { frame: number; percent: number; segmentIndex: number } | null = null;
 
   init() {
     if (this.socket) return;
@@ -21,15 +26,27 @@ class RenderWorkerService {
     store.dispatch(setConnectionStatus('CONNECTING'));
     store.dispatch(addWorkerLog('Connecting to Distributed Render Network...'));
 
+    // Initialize the Multi-Signal Idle Engine
+    idleEngine.init(
+      (reason) => this.handleLocalPreemption(reason),
+      (state, score, idleSeconds) => this.handleStateTransition(state, score, idleSeconds),
+    );
+
     const socketUrl = `${WS_URL}/rendering-ws`;
     this.socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 10,
+      reconnectionAttempts: 15,
       reconnectionDelay: 2000,
     });
 
     this.socket.on('connect', () => {
-      store.dispatch(setConnectionStatus('IDLE'));
+      const telemetry = idleEngine.getTelemetry();
+      store.dispatch(setConnectionStatus(telemetry.state));
+      store.dispatch(setNodeTelemetry({
+        nodeState: telemetry.state,
+        activityScore: telemetry.score,
+        idleSeconds: telemetry.idleSeconds,
+      }));
       store.dispatch(addWorkerLog(`Connected as distributed worker node: ${this.socket?.id}`));
 
       const authUser = store.getState().auth.user;
@@ -55,11 +72,14 @@ class RenderWorkerService {
 
     this.socket.on('render:assign_segment', async (payload) => {
       const isEnabled = store.getState().worker.isWorkerEnabled;
-      if (!isEnabled || this.isProcessing) {
+      const currentState = idleEngine.getCurrentState();
+
+      // Only execute if worker enabled and node is not active/busy
+      if (!isEnabled || this.isProcessing || currentState === 'ACTIVE') {
         this.socket?.emit('worker:segment_error', {
           jobId: payload.jobId,
           segmentIndex: payload.segmentIndex,
-          error: 'Worker busy or disabled by user',
+          error: `Worker not idle (status: ${currentState}, busy: ${this.isProcessing})`,
         });
         return;
       }
@@ -68,14 +88,70 @@ class RenderWorkerService {
     });
   }
 
+  private handleLocalPreemption(reason: string) {
+    if (!this.isProcessing) return;
+
+    store.dispatch(addWorkerLog(`🚨 Instant Preemption: User input (${reason})! Pausing render locally (0ms UI lag)...`));
+    store.dispatch(setConnectionStatus('PAUSED'));
+
+    // Emit out-of-band preemption message to NestJS backend
+    if (this.socket && this.socket.connected && this.activeJobPayload) {
+      this.socket.emit('worker:preempt', {
+        jobId: this.activeJobPayload.jobId,
+        lastSegment: this.activeJobPayload.segmentIndex,
+        reason,
+        checkpoint: this.lastCheckpoint,
+      });
+    }
+
+    if (this.lastCheckpoint) {
+      store.dispatch(updateTaskProgress({ percent: this.lastCheckpoint.percent, status: 'paused' }));
+    }
+  }
+
+  private handleStateTransition(state: NodeState, score: number, idleSeconds: number) {
+    store.dispatch(setNodeTelemetry({
+      nodeState: state,
+      activityScore: score,
+      idleSeconds: idleSeconds,
+    }));
+
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('worker:state_change', {
+        state,
+        score,
+        idleSeconds,
+      });
+    }
+
+    // If returning to IDLE and we have a paused job, we can resume!
+    if (state === 'IDLE' && this.activeJobPayload && !this.isProcessing) {
+      store.dispatch(addWorkerLog(`PC returned to IDLE (Inactivity >= 60s). Resuming paused segment #${this.activeJobPayload.segmentIndex}...`));
+      this.processSegment(this.activeJobPayload, this.lastCheckpoint?.frame || 0);
+    }
+  }
+
+  // 5-second Heartbeat matching spec
   private startHeartbeat() {
     this.stopHeartbeat();
     this.heartbeatInterval = setInterval(() => {
       if (this.socket && this.socket.connected) {
-        const isBusy = store.getState().worker.connectionStatus === 'RENDERING';
-        this.socket.emit('worker:heartbeat', { status: isBusy ? 'BUSY' : 'IDLE' });
+        const telemetry = idleEngine.getTelemetry();
+        store.dispatch(setNodeTelemetry({
+          nodeState: telemetry.state,
+          activityScore: telemetry.score,
+          idleSeconds: telemetry.idleSeconds,
+        }));
+
+        this.socket.emit('worker:heartbeat', {
+          status: this.isProcessing ? 'BUSY' : 'IDLE',
+          state: this.isProcessing ? 'RENDERING' : telemetry.state,
+          activityScore: telemetry.score,
+          idleSeconds: telemetry.idleSeconds,
+          workerAvailable: telemetry.workerAvailable,
+        });
       }
-    }, 10000);
+    }, 5000);
   }
 
   private stopHeartbeat() {
@@ -85,19 +161,25 @@ class RenderWorkerService {
     }
   }
 
-  private async processSegment(payload: {
-    jobId: string;
-    segmentIndex: number;
-    startSec: number;
-    endSec: number;
-    duration: number;
-    fps: number;
-    resolution: { w: number; h: number };
-    segmentSceneGraph: any;
-    uploadEndpoint: string;
-  }) {
+  private async processSegment(
+    payload: {
+      jobId: string;
+      segmentIndex: number;
+      startSec: number;
+      endSec: number;
+      duration: number;
+      fps: number;
+      resolution: { w: number; h: number };
+      segmentSceneGraph: any;
+      uploadEndpoint: string;
+    },
+    startFromFrame = 0,
+  ) {
     this.isProcessing = true;
+    this.activeJobPayload = payload;
+    idleEngine.setRendering(true);
     store.dispatch(setConnectionStatus('RENDERING'));
+
     store.dispatch(
       setCurrentTask({
         jobId: payload.jobId,
@@ -105,12 +187,12 @@ class RenderWorkerService {
         startSec: payload.startSec,
         endSec: payload.endSec,
         duration: payload.duration,
-        percent: 0,
+        percent: Math.round((startFromFrame / Math.ceil(payload.duration * (payload.fps || 30))) * 90),
         status: 'rendering',
       }),
     );
     store.dispatch(
-      addWorkerLog(`Assigned Segment #${payload.segmentIndex} (${payload.startSec}s - ${payload.endSec}s)`),
+      addWorkerLog(`Started Segment #${payload.segmentIndex} (${payload.startSec}s - ${payload.endSec}s)`),
     );
 
     const canvas = document.createElement('canvas');
@@ -118,8 +200,8 @@ class RenderWorkerService {
     const height = payload.resolution?.h || 720;
     canvas.width = width;
     canvas.height = height;
-    const ctx = canvas.getContext('2d');
 
+    const ctx = canvas.getContext('2d');
     if (!ctx) {
       this.socket?.emit('worker:segment_error', {
         jobId: payload.jobId,
@@ -127,11 +209,11 @@ class RenderWorkerService {
         error: 'Unable to initialize canvas 2D context',
       });
       this.isProcessing = false;
+      idleEngine.setRendering(false);
       return;
     }
 
     try {
-      // Capture canvas stream
       const fps = payload.fps || 30;
       const stream = canvas.captureStream(fps);
 
@@ -173,7 +255,7 @@ class RenderWorkerService {
                 v.onloadedmetadata = () => res();
                 v.onerror = () => res();
                 setTimeout(res, 3000);
-              })
+              }),
             );
             v.load();
             videoElements.set(clip.assetId, v);
@@ -186,7 +268,20 @@ class RenderWorkerService {
       const totalFrames = Math.ceil(payload.duration * fps);
       const frameIntervalSec = 1 / fps;
 
-      for (let frame = 0; frame < totalFrames; frame++) {
+      for (let frame = startFromFrame; frame < totalFrames; frame++) {
+        // --- COOPERATIVE PAUSE CHECK (Instant Local Preemption) ---
+        if (idleEngine.isPauseRequested()) {
+          this.lastCheckpoint = {
+            frame,
+            percent: Math.round((frame / totalFrames) * 90),
+            segmentIndex: payload.segmentIndex,
+          };
+          recorder.stop();
+          this.isProcessing = false;
+          idleEngine.setRendering(false);
+          return;
+        }
+
         const currentTime = frame * frameIntervalSec;
 
         // Clear background
@@ -241,6 +336,11 @@ class RenderWorkerService {
           });
         }
 
+        // Checkpoint every 1 second (fps frames)
+        if (frame % fps === 0) {
+          this.lastCheckpoint = { frame, percent, segmentIndex: payload.segmentIndex };
+        }
+
         // Allow browser frame tick
         await new Promise((resolve) => setTimeout(resolve, Math.max(1, Math.floor(1000 / fps / 2))));
       }
@@ -257,7 +357,11 @@ class RenderWorkerService {
 
       // Upload chunk to server
       store.dispatch(updateTaskProgress({ percent: 96, status: 'uploading' }));
-      store.dispatch(addWorkerLog(`Uploading finished chunk for Segment #${payload.segmentIndex} (${(videoBlob.size / 1024).toFixed(1)} KB)`));
+      store.dispatch(
+        addWorkerLog(
+          `Uploading finished chunk for Segment #${payload.segmentIndex} (${(videoBlob.size / 1024).toFixed(1)} KB)`,
+        ),
+      );
 
       const formData = new FormData();
       formData.append('chunk', videoBlob, `segment_${payload.segmentIndex}.webm`);
@@ -284,6 +388,8 @@ class RenderWorkerService {
 
       store.dispatch(completeCurrentTask());
       store.dispatch(addWorkerLog(`✓ Segment #${payload.segmentIndex} successfully rendered & delivered!`));
+      this.activeJobPayload = null;
+      this.lastCheckpoint = null;
     } catch (err: any) {
       store.dispatch(addWorkerLog(`❌ Error in Segment #${payload.segmentIndex}: ${err.message}`));
       this.socket?.emit('worker:segment_error', {
@@ -291,15 +397,18 @@ class RenderWorkerService {
         segmentIndex: payload.segmentIndex,
         error: err.message,
       });
-      store.dispatch(setConnectionStatus('IDLE'));
+      store.dispatch(setConnectionStatus(idleEngine.getCurrentState()));
       store.dispatch(setCurrentTask(null));
+      this.activeJobPayload = null;
     } finally {
       this.isProcessing = false;
+      idleEngine.setRendering(false);
     }
   }
 
   destroy() {
     this.stopHeartbeat();
+    idleEngine.destroy();
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;

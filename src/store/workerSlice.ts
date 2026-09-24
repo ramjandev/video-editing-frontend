@@ -1,5 +1,5 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-import type { ClusterStats } from '@/types';
+import type { ClusterStats, NodeState } from '@/types';
 
 export interface RenderTask {
   jobId: string;
@@ -8,12 +8,24 @@ export interface RenderTask {
   endSec: number;
   duration: number;
   percent: number;
-  status: 'rendering' | 'encoding' | 'uploading' | 'completed' | 'failed';
+  status: 'rendering' | 'encoding' | 'uploading' | 'completed' | 'failed' | 'paused';
 }
 
 export interface WorkerState {
   isWorkerEnabled: boolean;
-  connectionStatus: 'DISCONNECTED' | 'CONNECTING' | 'IDLE' | 'RENDERING';
+  connectionStatus:
+    | 'DISCONNECTED'
+    | 'CONNECTING'
+    | 'ACTIVE'
+    | 'IDLE_CANDIDATE'
+    | 'IDLE'
+    | 'RENDERING'
+    | 'PREEMPTED'
+    | 'PAUSED'
+    | 'OFFLINE';
+  nodeState: NodeState;
+  activityScore: number;
+  idleSeconds: number;
   currentTask: RenderTask | null;
   segmentsCompleted: number;
   clusterStats: ClusterStats;
@@ -26,6 +38,9 @@ const initialCompleted = typeof window !== 'undefined' ? parseInt(localStorage.g
 const initialState: WorkerState = {
   isWorkerEnabled: initialEnabled,
   connectionStatus: 'DISCONNECTED',
+  nodeState: 'ACTIVE',
+  activityScore: 50,
+  idleSeconds: 0,
   currentTask: null,
   segmentsCompleted: initialCompleted,
   clusterStats: {
@@ -52,6 +67,17 @@ const workerSlice = createSlice({
     setConnectionStatus(state, action: PayloadAction<WorkerState['connectionStatus']>) {
       state.connectionStatus = action.payload;
     },
+    setNodeTelemetry(
+      state,
+      action: PayloadAction<{ nodeState: NodeState; activityScore: number; idleSeconds: number }>,
+    ) {
+      state.nodeState = action.payload.nodeState;
+      state.activityScore = action.payload.activityScore;
+      state.idleSeconds = action.payload.idleSeconds;
+      if (state.connectionStatus !== 'RENDERING' && state.connectionStatus !== 'DISCONNECTED' && state.connectionStatus !== 'CONNECTING') {
+        state.connectionStatus = action.payload.nodeState as any;
+      }
+    },
     setCurrentTask(state, action: PayloadAction<RenderTask | null>) {
       state.currentTask = action.payload;
     },
@@ -74,7 +100,7 @@ const workerSlice = createSlice({
     },
     addWorkerLog(state, action: PayloadAction<string>) {
       state.logMessages.unshift(`[${new Date().toLocaleTimeString()}] ${action.payload}`);
-      if (state.logMessages.length > 20) {
+      if (state.logMessages.length > 25) {
         state.logMessages.pop();
       }
     },
@@ -84,6 +110,7 @@ const workerSlice = createSlice({
 export const {
   setWorkerEnabled,
   setConnectionStatus,
+  setNodeTelemetry,
   setCurrentTask,
   updateTaskProgress,
   completeCurrentTask,
