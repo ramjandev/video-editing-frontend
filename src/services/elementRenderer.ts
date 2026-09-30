@@ -1,5 +1,16 @@
+import { LAYOUT_CANVAS_H, LAYOUT_CANVAS_W } from "@/lib/layouts";
+import { computeMotion, isClipOnScreen } from "@/lib/motion";
 import type { Clip, SceneGraph } from "@/types";
 import { drawQRCode } from "./qrGenerator";
+
+export interface DrawClipOptions {
+  force?: boolean;
+  opacity?: number;
+  offsetX?: number;
+  offsetY?: number;
+  scale?: number;
+  fallbackFrame?: CanvasImageSource | null;
+}
 
 /**
  * Get active clips at current playhead position sorted by Painter's Algorithm layer order.
@@ -12,7 +23,7 @@ export function getSortedActiveClips(sceneGraph: SceneGraph | null | undefined, 
 
   sceneGraph.tracks.forEach((track, trackIndex) => {
     const matchingClips = track.clips.filter(
-      (c) => playhead >= c.startTime && playhead <= c.endTime && c.asset?.type !== "audio"
+      (c) => c.asset?.type !== "audio" && isClipOnScreen(sceneGraph, c, playhead)
     );
     matchingClips.forEach((clip) => {
       active.push({ clip, trackIndex });
@@ -40,7 +51,11 @@ export function getSortedActiveClips(sceneGraph: SceneGraph | null | undefined, 
       return prioA - prioB;
     }
 
-    return b.trackIndex - a.trackIndex;
+    if (a.trackIndex !== b.trackIndex) {
+      return b.trackIndex - a.trackIndex;
+    }
+
+    return a.clip.startTime - b.clip.startTime;
   });
 
   return active.map((item) => item.clip);
@@ -57,60 +72,40 @@ export function drawClipToCanvas(
   currentTime: number,
   canvasWidth: number,
   canvasHeight: number,
-  media: RenderContextMedia = {}
+  media: RenderContextMedia = {},
+  options: DrawClipOptions = {}
 ) {
-  if (!clip || currentTime < clip.startTime || currentTime > clip.endTime) return;
+  const outside = !clip || currentTime < clip.startTime || currentTime > clip.endTime;
+  if (outside && !options.force) return;
 
   const elapsed = currentTime - clip.startTime;
 
   // 1. Transform Defaults
   const transform = clip.transform || {};
-  const posX = (transform.x ?? 0) + canvasWidth / 2;
-  const posY = (transform.y ?? 0) + canvasHeight / 2;
+  const isLayoutCell = transform.objectFit === "cover";
+  const layoutScaleX = isLayoutCell ? canvasWidth / LAYOUT_CANVAS_W : 1;
+  const layoutScaleY = isLayoutCell ? canvasHeight / LAYOUT_CANVAS_H : 1;
+  const posX = (transform.x ?? 0) * layoutScaleX + canvasWidth / 2;
+  const posY = (transform.y ?? 0) * layoutScaleY + canvasHeight / 2;
   const scale = transform.scale ?? 1.0;
   const rotationRad = ((transform.rotation ?? 0) * Math.PI) / 180;
   let baseOpacity = transform.opacity ?? 1.0;
 
-  // 2. Animations (Fade, Slide, Zoom, Bounce)
-  let animOffsetX = 0;
-  let animOffsetY = 0;
-  let animScale = 1.0;
-
-  const animation = clip.animation;
-  if (animation && animation.type) {
-    const animDur = animation.duration || 0.6;
-    if (animation.type === "fade_in") {
-      const p = Math.min(1, Math.max(0, elapsed / animDur));
-      baseOpacity *= p;
-    } else if (animation.type === "fade_out") {
-      const remaining = clip.endTime - currentTime;
-      const p = Math.min(1, Math.max(0, remaining / animDur));
-      baseOpacity *= p;
-    } else if (animation.type === "slide_left") {
-      const p = Math.min(1, Math.max(0, elapsed / animDur));
-      animOffsetX = (1 - p) * -300;
-    } else if (animation.type === "slide_right") {
-      const p = Math.min(1, Math.max(0, elapsed / animDur));
-      animOffsetX = (1 - p) * 300;
-    } else if (animation.type === "zoom_in") {
-      const p = Math.min(1, Math.max(0, elapsed / animDur));
-      animScale = 0.2 + 0.8 * p;
-    } else if (animation.type === "zoom_out") {
-      const p = Math.min(1, Math.max(0, elapsed / animDur));
-      animScale = 1.5 - 0.5 * p;
-    } else if (animation.type === "bounce") {
-      const p = Math.min(1, Math.max(0, elapsed / animDur));
-      animOffsetY = -Math.abs(Math.sin(p * Math.PI * 2)) * 40 * (1 - p);
-    }
-  }
+  const motionTime = Math.min(clip.endTime, Math.max(clip.startTime, currentTime));
+  const motion = computeMotion(clip, motionTime, canvasWidth, canvasHeight);
+  const animOffsetX = motion.offsetX + (options.offsetX ?? 0);
+  const animOffsetY = motion.offsetY + (options.offsetY ?? 0);
+  const animScaleX = motion.scaleX * (options.scale ?? 1);
+  const animScaleY = motion.scaleY * (options.scale ?? 1);
+  baseOpacity *= motion.opacity * (options.opacity ?? 1);
 
   if (baseOpacity <= 0) return;
 
   ctx.save();
   ctx.globalAlpha = baseOpacity;
   ctx.translate(posX + animOffsetX, posY + animOffsetY);
-  ctx.rotate(rotationRad);
-  ctx.scale(scale * animScale, scale * animScale);
+  ctx.rotate(rotationRad + motion.rotation);
+  ctx.scale(scale * animScaleX, scale * animScaleY);
 
   const assetType = clip.asset?.type || "video";
   const content = clip.asset?.content;
@@ -289,7 +284,25 @@ export function drawClipToCanvas(
         naturalWidth = vid.videoWidth;
         naturalHeight = vid.videoHeight;
       }
-    } else if (assetType === "image" && media.imageElements) {
+    }
+    if (!sourceMedia && options.fallbackFrame) {
+      const frame = options.fallbackFrame as CanvasImageSource & {
+        videoWidth?: number;
+        videoHeight?: number;
+        naturalWidth?: number;
+        naturalHeight?: number;
+        width?: number;
+        height?: number;
+      };
+      const frameWidth = frame.videoWidth || frame.naturalWidth || frame.width || 0;
+      const frameHeight = frame.videoHeight || frame.naturalHeight || frame.height || 0;
+      if (frameWidth > 0 && frameHeight > 0) {
+        sourceMedia = frame as HTMLCanvasElement;
+        naturalWidth = frameWidth;
+        naturalHeight = frameHeight;
+      }
+    }
+    if (!sourceMedia && assetType === "image" && media.imageElements) {
       const img = media.imageElements.get(clip.id) || media.imageElements.get(clip.assetId);
       if (img && img.complete && img.width > 0) {
         sourceMedia = img;
@@ -298,13 +311,21 @@ export function drawClipToCanvas(
       }
     }
 
-    const fitWidth = transform.width || canvasWidth;
-    const fitHeight = transform.height || canvasHeight;
+    const fitWidth = transform.width != null ? transform.width * layoutScaleX : canvasWidth;
+    const fitHeight = transform.height != null ? transform.height * layoutScaleY : canvasHeight;
 
     if (sourceMedia) {
-      const scaleFit = Math.min(fitWidth / naturalWidth, fitHeight / naturalHeight);
+      const contain = Math.min(fitWidth / naturalWidth, fitHeight / naturalHeight);
+      const cover = Math.max(fitWidth / naturalWidth, fitHeight / naturalHeight);
+      const scaleFit = transform.objectFit === "cover" ? cover : contain;
       const dw = naturalWidth * scaleFit;
       const dh = naturalHeight * scaleFit;
+
+      if (transform.objectFit === "cover") {
+        ctx.beginPath();
+        ctx.rect(-fitWidth / 2, -fitHeight / 2, fitWidth, fitHeight);
+        ctx.clip();
+      }
 
       ctx.drawImage(sourceMedia, -dw / 2, -dh / 2, dw, dh);
     }

@@ -183,7 +183,7 @@ export async function exportInBrowser(
       for (const clip of videoClips) {
         const vid = videoElements.get(clip.assetId) || videoElements.get(clip.id);
         if (vid && vid.readyState >= 2) {
-          const targetTime = (clip.trimIn || 0) + (currentTime - clip.startTime);
+          const targetTime = mediaTimeForClip(clip, currentTime);
           const lastTime = videoCurrentTimes.get(clip.id) ?? -999;
           const delta = Math.abs(targetTime - lastTime);
 
@@ -225,8 +225,28 @@ export async function exportInBrowser(
 
       // Draw all clips in painter's order (video first, text last on top)
       for (const clip of activeClips) {
-        drawClip(ctx, clip, currentTime, width, height, videoElements, imageElements);
+        const transition = getTransitionFx(sceneGraph, clip, currentTime, width, height);
+        if (transition.clipRect) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(transition.clipRect.x, transition.clipRect.y, transition.clipRect.w, transition.clipRect.h);
+          ctx.clip();
+        }
+        drawClipToCanvas(ctx, clip, currentTime, width, height, {
+          videoElements,
+          imageElements,
+        }, {
+          force: transition.force,
+          opacity: transition.opacity,
+          offsetX: transition.offsetX,
+          offsetY: transition.offsetY,
+          scale: transition.scale,
+        });
+        if (transition.clipRect) ctx.restore();
+        strokeTransitionEdge(ctx, transition);
       }
+
+      drawLayoutStrokes(ctx, sceneGraph.layoutId, width, height);
 
       // Feed frame to hardware encoder
       await encoder.addFrame(canvas);
@@ -328,22 +348,9 @@ async function preloadAssets(sceneGraph: any): Promise<{
   return { videoElements, imageElements };
 }
 
+import { drawLayoutStrokes } from '@/lib/layouts';
+import { getTransitionFx, mediaTimeForClip, strokeTransitionEdge } from '@/lib/motion';
 import { drawClipToCanvas, getSortedActiveClips } from './elementRenderer';
-
-function drawClip(
-  ctx: CanvasRenderingContext2D,
-  clip: any,
-  currentTime: number,
-  canvasWidth: number,
-  canvasHeight: number,
-  videoElements: Map<string, HTMLVideoElement>,
-  imageElements: Map<string, HTMLImageElement>,
-): void {
-  drawClipToCanvas(ctx, clip, currentTime, canvasWidth, canvasHeight, {
-    videoElements,
-    imageElements,
-  });
-}
 
 async function uploadToServer(blob: Blob, format: string): Promise<string> {
   const formData = new FormData();

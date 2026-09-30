@@ -1,3 +1,4 @@
+import { animationInfo, clipAnimations } from "@/lib/motion";
 import { formatTimeCode } from "@/lib/utils";
 import {
   addAssetToTimeline,
@@ -6,6 +7,7 @@ import {
   setPlayhead,
   setSelectedClip,
   splitClip,
+  updateClip,
 } from "@/store/editorSlice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { triggerAutosave } from "@/store/thunks";
@@ -214,16 +216,39 @@ const ScrollableTimeline: React.FC<Props> = ({
                 const isSelected = selectedClipId === clip.id;
                 const isAudio = clip.asset.type === "audio";
                 const isText = clip.asset.type === "text";
+                const nextClip = isAudio
+                  ? undefined
+                  : track.clips.find(
+                      (other) =>
+                        other.id !== clip.id &&
+                        other.asset.type !== "audio" &&
+                        Math.abs(other.startTime - clip.endTime) <= 0.08,
+                    );
+                const hasTransition =
+                  !!clip.transitionOut && clip.transitionOut.type !== "none";
+                const slots = clipAnimations(clip);
+                const enterAnimation = animationInfo(slots.enter?.type);
+                const emphasisAnimation = animationInfo(slots.emphasis?.type);
+                const exitAnimation = animationInfo(slots.exit?.type);
+                const clipSpan = Math.max(0.01, clip.endTime - clip.startTime);
+                const markerWidth = (duration?: number) =>
+                  Math.min(
+                    clipSpan * pixelsPerSecond,
+                    Math.max(18, (duration ?? 0.6) * pixelsPerSecond),
+                  );
+                const enterWidth = markerWidth(slots.enter?.duration);
+                const emphasisWidth = markerWidth(slots.emphasis?.duration);
+                const exitWidth = markerWidth(slots.exit?.duration);
 
                 return (
+                  <div key={clip.id}>
                   <div
-                    key={clip.id}
                     onClick={(e) => {
                       e.stopPropagation();
                       dispatch(setSelectedClip(clip.id));
                     }}
                     onMouseDown={(e) => handleClipMouseDown(e, clip, track.id)}
-                    className={`absolute top-2 bottom-2 rounded-xl border flex items-center px-3 text-xs cursor-grab active:cursor-grabbing transition-all ${
+                    className={`absolute top-2 bottom-2 rounded-xl border flex items-center px-3 text-xs cursor-grab active:cursor-grabbing transition-all overflow-hidden ${
                       isAudio
                         ? "bg-emerald-600 dark:bg-emerald-700 text-white border-emerald-500 shadow-xs"
                         : isText
@@ -245,6 +270,42 @@ const ScrollableTimeline: React.FC<Props> = ({
                           clip.asset.original_url.split("/").pop() ||
                           "Clip"}
                     </span>
+                    {enterAnimation && (
+                      <div
+                        title={`${enterAnimation.label} · ${slots.enter?.duration ?? 0.6}s`}
+                        className="absolute inset-y-0 left-0 rounded-l-xl bg-gradient-to-r from-sky-400/55 to-sky-400/0 pointer-events-none"
+                        style={{ width: enterWidth }}
+                      />
+                    )}
+                    {exitAnimation && (
+                      <div
+                        title={`${exitAnimation.label} · ${slots.exit?.duration ?? 0.6}s`}
+                        className="absolute inset-y-0 right-0 rounded-r-xl bg-gradient-to-l from-violet-400/60 to-violet-400/0 pointer-events-none"
+                        style={{ width: exitWidth }}
+                      />
+                    )}
+                    {emphasisAnimation && (
+                      <div
+                        title={`${emphasisAnimation.label} · ${slots.emphasis?.duration ?? 0.6}s`}
+                        className="absolute inset-y-0 rounded-md bg-sky-400/45 pointer-events-none"
+                        style={{ width: emphasisWidth, left: `calc(50% - ${emphasisWidth / 2}px)` }}
+                      />
+                    )}
+                    {enterAnimation && (
+                      <span className="absolute bottom-0.5 left-1.5 z-10 max-w-[32%] truncate rounded bg-sky-600/90 px-1 py-px text-[9px] font-semibold leading-tight text-white pointer-events-none">
+                        {enterAnimation.label}
+                      </span>
+                    )}
+                    {emphasisAnimation && (
+                      <span className="absolute bottom-0.5 left-1/2 z-10 max-w-[32%] -translate-x-1/2 truncate rounded bg-sky-600/90 px-1 py-px text-[9px] font-semibold leading-tight text-white pointer-events-none">
+                        {emphasisAnimation.label}
+                      </span>
+                    )}
+                    {exitAnimation && (
+                      <span className="absolute bottom-0.5 right-1.5 z-10 max-w-[32%] truncate rounded bg-violet-600/90 px-1 py-px text-[9px] font-semibold leading-tight text-white pointer-events-none">
+                        {exitAnimation.label}
+                      </span>
+                    )}
                     {isSelected && (
                       <button
                         onClick={(e) => {
@@ -264,6 +325,48 @@ const ScrollableTimeline: React.FC<Props> = ({
                         <Scissors className="w-3 h-3" />
                       </button>
                     )}
+                  </div>
+                  {nextClip && (
+                    <button
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        dispatch(setSelectedClip(clip.id));
+                        if (!hasTransition) {
+                          dispatch(
+                            updateClip({
+                              trackId: track.id,
+                              clipId: clip.id,
+                              updates: { transitionOut: { type: "crossfade", duration: 0.8 } },
+                            }),
+                          );
+                          dispatch(triggerAutosave());
+                        }
+                        const span = clip.transitionOut?.duration ?? 0.8;
+                        dispatch(setPlayhead(Math.max(0, clip.endTime - span * 0.15)));
+                      }}
+                      title={
+                        hasTransition
+                          ? `Transition: ${clip.transitionOut?.type}. Play across this cut to see it.`
+                          : "Add crossfade between these clips"
+                      }
+                      className={`absolute top-1/2 -translate-y-1/2 z-20 w-4 h-4 rounded-full border-2 shadow cursor-pointer ${
+                        hasTransition
+                          ? "bg-sky-500 border-white"
+                          : "bg-white dark:bg-slate-800 border-sky-500"
+                      }`}
+                      style={{ left: `${clip.endTime * pixelsPerSecond - 8}px` }}
+                    />
+                  )}
+                  {nextClip && hasTransition && (
+                    <div
+                      className="absolute top-1 bottom-1 z-10 rounded bg-sky-400/30 border border-sky-400 pointer-events-none"
+                      style={{
+                        left: `${(clip.endTime - (clip.transitionOut?.duration ?? 0.8) / 2) * pixelsPerSecond}px`,
+                        width: `${(clip.transitionOut?.duration ?? 0.8) * pixelsPerSecond}px`,
+                      }}
+                    />
+                  )}
                   </div>
                 );
               })}

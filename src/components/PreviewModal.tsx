@@ -1,5 +1,7 @@
 import { getMediaUrl } from "@/lib/api";
 import { formatTimeCode } from "@/lib/utils";
+import { drawLayoutStrokes } from "@/lib/layouts";
+import { getTransitionFx, isClipOnScreen, mediaTimeForClip, strokeTransitionEdge } from "@/lib/motion";
 import { drawClipToCanvas, getSortedActiveClips } from "@/services/elementRenderer";
 import { store } from "@/store";
 import { setPlayhead, togglePlay } from "@/store/editorSlice";
@@ -180,12 +182,10 @@ export function PreviewModal({ onClose }: { onClose: () => void }) {
             const media = videoRefs.current.get(clip.id);
             if (!media) return;
 
-            const isActive =
-              currentPlayhead >= clip.startTime && currentPlayhead <= clip.endTime;
+            const isActive = isClipOnScreen(currentSceneGraph, clip, currentPlayhead);
 
             if (isActive) {
-              const currentClipTime =
-                clip.trimIn + (currentPlayhead - clip.startTime);
+              const currentClipTime = mediaTimeForClip(clip, currentPlayhead);
 
               if (currentIsPlaying) {
                 if (media.paused) {
@@ -215,6 +215,19 @@ export function PreviewModal({ onClose }: { onClose: () => void }) {
       activeClips.forEach((clip) => {
         if (clip.asset.type === "audio") return;
 
+        const transition = getTransitionFx(
+          currentSceneGraph,
+          clip,
+          currentPlayhead,
+          canvas.width,
+          canvas.height,
+        );
+        if (transition.clipRect) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(transition.clipRect.x, transition.clipRect.y, transition.clipRect.w, transition.clipRect.h);
+          ctx.clip();
+        }
         drawClipToCanvas(
           ctx,
           clip,
@@ -225,8 +238,19 @@ export function PreviewModal({ onClose }: { onClose: () => void }) {
             videoElements: videoRefs.current,
             imageElements: imageElementsMap,
           },
+          {
+            force: transition.force,
+            opacity: transition.opacity,
+            offsetX: transition.offsetX,
+            offsetY: transition.offsetY,
+            scale: transition.scale,
+          },
         );
+        if (transition.clipRect) ctx.restore();
+        strokeTransitionEdge(ctx, transition);
       });
+
+      drawLayoutStrokes(ctx, currentSceneGraph.layoutId, canvas.width, canvas.height);
 
       animationFrameId = requestAnimationFrame(render);
     };

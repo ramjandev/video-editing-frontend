@@ -2,19 +2,23 @@ import {
   deleteClip,
   duplicateClip,
   separateAudio,
+  setPlayhead,
   setSelectedClip,
+  togglePlay,
   updateClip,
 } from "@/store/editorSlice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { triggerAutosave } from "@/store/thunks";
+import { animationLabel, clipAnimations, findNextAbutting, findPrevAbutting, TRANSITIONS, transitionLabel } from "@/lib/motion";
 import type {
-  AnimationProps,
+  AnimationCategory,
   Clip,
   QrStyles,
   ShapeStyles,
   SliderStyles,
   TextStyles,
   TransformProps,
+  TransitionKind,
 } from "@/types";
 import {
   ArrowLeft,
@@ -39,11 +43,12 @@ import { SelectLayoutModal } from "./SelectLayoutModal";
 
 export function PropertiesPanel() {
   const dispatch = useAppDispatch();
-  const { selectedClipId, sceneGraph } = useAppSelector((s) => s.editor);
+  const { selectedClipId, sceneGraph, isPlaying } = useAppSelector((s) => s.editor);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
   const [isAnimationModalOpen, setIsAnimationModalOpen] = useState(false);
+  const [modalCategory, setModalCategory] = useState<AnimationCategory>("enter");
   const [currentLayout, setCurrentLayout] = useState("2:1 Horizontal");
 
   let selectedClip: Clip | null = null;
@@ -65,7 +70,7 @@ export function PropertiesPanel() {
   const shapeStyles = selectedClip?.shapeStyles || {};
   const qrStyles = selectedClip?.qrStyles || {};
   const sliderStyles = selectedClip?.sliderStyles || {};
-  const animation = selectedClip?.animation || {};
+  const animationSlots = selectedClip ? clipAnimations(selectedClip) : {};
 
   const handleUpdateTransform = (updates: Partial<TransformProps>) => {
     if (!selectedClip || !selectedTrackId) return;
@@ -144,16 +149,80 @@ export function PropertiesPanel() {
     dispatch(triggerAutosave());
   };
 
-  const handleUpdateAnimation = (animType: any) => {
+  const handleUpdateAnimation = (
+    anim: { category: AnimationCategory; type: string; duration: number },
+  ) => {
     if (!selectedClip || !selectedTrackId) return;
-    const newAnim: AnimationProps = { type: animType, duration: 0.6 };
+    const current = clipAnimations(selectedClip);
+    const next = { ...current };
+    if (!anim.type) delete next[anim.category];
+    else next[anim.category] = { type: anim.type, category: anim.category, duration: anim.duration };
     dispatch(
       updateClip({
         trackId: selectedTrackId,
         clipId: selectedClip.id,
-        updates: { animation: newAnim },
+        updates: { animations: next, animation: undefined },
       }),
     );
+    if (anim.type) {
+      const start = selectedClip.startTime;
+      const end = selectedClip.endTime;
+      const at =
+        anim.category === "exit"
+          ? Math.max(start, end - anim.duration)
+          : anim.category === "emphasis"
+            ? Math.max(start, (start + end) / 2 - anim.duration / 2)
+            : start;
+      if (!isPlaying) dispatch(togglePlay());
+      dispatch(setPlayhead(Math.min(end, Math.max(start, at))));
+    }
+    dispatch(triggerAutosave());
+  };
+
+  const handleAnimationDuration = (category: AnimationCategory, duration: number) => {
+    if (!selectedClip || !selectedTrackId) return;
+    const current = clipAnimations(selectedClip);
+    const slot = current[category];
+    if (!slot?.type) return;
+    dispatch(
+      updateClip({
+        trackId: selectedTrackId,
+        clipId: selectedClip.id,
+        updates: {
+          animations: { ...current, [category]: { ...slot, duration } },
+          animation: undefined,
+        },
+      }),
+    );
+    dispatch(triggerAutosave());
+  };
+
+  const nextCut = sceneGraph && selectedClip ? findNextAbutting(sceneGraph, selectedClip) : null;
+  const prevCut = sceneGraph && selectedClip ? findPrevAbutting(sceneGraph, selectedClip) : null;
+  const transitionClip = nextCut ? selectedClip : prevCut;
+  const transitionTrackId =
+    sceneGraph && transitionClip
+      ? sceneGraph.tracks.find((track) => track.clips.some((clip) => clip.id === transitionClip.id))?.id
+      : undefined;
+
+  const handleTransition = (type: TransitionKind, duration?: number) => {
+    if (!transitionClip || !transitionTrackId) return;
+    dispatch(
+      updateClip({
+        trackId: transitionTrackId,
+        clipId: transitionClip.id,
+        updates: {
+          transitionOut: {
+            type,
+            duration: duration ?? transitionClip.transitionOut?.duration ?? 0.8,
+          },
+        },
+      }),
+    );
+    if (duration === undefined && type !== "none") {
+      const span = transitionClip.transitionOut?.duration ?? 0.8;
+      dispatch(setPlayhead(Math.max(0, transitionClip.endTime - span * 0.15)));
+    }
     dispatch(triggerAutosave());
   };
 
@@ -864,20 +933,104 @@ export function PropertiesPanel() {
 
           {/* F. ANIMATION PICKER */}
           {clipType !== "audio" && (
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+            <div className="space-y-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
               <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-sky-500" /> Animation:{" "}
-                <span className="capitalize font-normal text-slate-400">
-                  {animation.type || "None"}
+                <Sparkles className="w-3.5 h-3.5 text-sky-500" /> Animations
+              </span>
+              {(["enter", "emphasis", "exit"] as const).map((category) => {
+                const slot = animationSlots[category];
+                return (
+                  <div key={category} className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-600 dark:text-slate-300 capitalize">
+                        {category}
+                        <span className="font-normal text-slate-400">
+                          {" "}
+                          {animationLabel(slot?.type)}
+                        </span>
+                      </span>
+                      <button
+                        onClick={() => {
+                          setModalCategory(category);
+                          setIsAnimationModalOpen(true);
+                        }}
+                        className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:border-sky-400 text-[11px] font-medium text-slate-700 dark:text-slate-300 transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Choose</span>
+                      </button>
+                    </div>
+                    {slot?.type && (
+                      <div className="flex items-center gap-3">
+                        <span className="text-[11px] text-slate-500 shrink-0">
+                          {(slot.duration ?? 0.6).toFixed(1)}s
+                        </span>
+                        <input
+                          type="range"
+                          min={0.2}
+                          max={2}
+                          step={0.1}
+                          value={slot.duration ?? 0.6}
+                          onChange={(event) =>
+                            handleAnimationDuration(category, parseFloat(event.target.value))
+                          }
+                          className="w-full accent-sky-500 cursor-pointer"
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {clipType !== "audio" && transitionClip && (
+            <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {nextCut ? "Transition to next clip" : "Transition from previous clip"}:{" "}
+                <span className="font-normal text-slate-400">
+                  {transitionLabel(transitionClip.transitionOut?.type)}
                 </span>
               </span>
-              <button
-                onClick={() => setIsAnimationModalOpen(true)}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:border-sky-400 text-xs font-medium text-slate-700 dark:text-slate-300 transition-colors cursor-pointer flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Choose</span>
-              </button>
+              <div className="grid grid-cols-2 gap-1.5">
+                {TRANSITIONS.map((item) => {
+                  const active = (transitionClip.transitionOut?.type || "none") === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleTransition(item.id)}
+                      className={`px-2 py-1.5 rounded-lg border text-[11px] font-medium cursor-pointer ${
+                        active
+                          ? "border-sky-500 bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-300"
+                          : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-sky-400"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {(transitionClip.transitionOut?.type || "none") !== "none" && (
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-slate-500 shrink-0">
+                    {(transitionClip.transitionOut?.duration ?? 0.8).toFixed(1)}s
+                  </span>
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={2}
+                    step={0.1}
+                    value={transitionClip.transitionOut?.duration ?? 0.8}
+                    onChange={(event) =>
+                      handleTransition(
+                        transitionClip.transitionOut?.type || "crossfade",
+                        parseFloat(event.target.value),
+                      )
+                    }
+                    className="w-full accent-sky-500 cursor-pointer"
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -893,8 +1046,18 @@ export function PropertiesPanel() {
         <AnimationModal
           isOpen={isAnimationModalOpen}
           onClose={() => setIsAnimationModalOpen(false)}
-          onSelectAnimation={(anim) => handleUpdateAnimation(anim.type)}
-          currentAnimation={animation.type}
+          onSelectAnimation={handleUpdateAnimation}
+          initialCategory={modalCategory}
+          selected={{
+            enter: animationSlots.enter?.type,
+            emphasis: animationSlots.emphasis?.type,
+            exit: animationSlots.exit?.type,
+          }}
+          durations={{
+            enter: animationSlots.enter?.duration ?? 0.6,
+            emphasis: animationSlots.emphasis?.duration ?? 0.6,
+            exit: animationSlots.exit?.duration ?? 0.6,
+          }}
         />
       </div>
     </div>

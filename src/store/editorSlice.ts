@@ -1,4 +1,5 @@
-import type { Asset, Clip, SceneGraph, Track } from "@/types";
+import { getLayoutCells } from "@/lib/layouts";
+import type { Asset, Clip, SceneGraph, Track, TransformProps } from "@/types";
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import { mediaManager } from "@/services/mediaManager";
 
@@ -107,6 +108,43 @@ const snapshotHistory = (state: EditorState) => {
   state.past = [...state.past, JSON.parse(JSON.stringify(state.sceneGraph))].slice(-50);
   state.future = [];
 };
+
+function layoutTransformForNewClip(
+  sceneGraph: SceneGraph,
+  assetType: string,
+): Partial<TransformProps> {
+  if (!sceneGraph.layoutId || (assetType !== "video" && assetType !== "image")) {
+    return {};
+  }
+
+  const cells = getLayoutCells(sceneGraph.layoutId);
+  if (cells.length === 0) return {};
+
+  const cell =
+    cells.length === 1
+      ? cells[0]
+      : cells[
+          sceneGraph.tracks.reduce(
+            (count, track) =>
+              count +
+              track.clips.filter(
+                (clip) => clip.asset?.type === "video" || clip.asset?.type === "image",
+              ).length,
+            0,
+          )
+        ];
+
+  if (!cell) return {};
+
+  return {
+    x: cell.x,
+    y: cell.y,
+    width: cell.width,
+    height: cell.height,
+    scale: 1,
+    objectFit: "cover",
+  };
+}
 
 const editorSlice = createSlice({
   name: "editor",
@@ -250,6 +288,7 @@ const editorSlice = createSlice({
           opacity: 1,
           width: isShape ? 200 : undefined,
           height: isShape ? 150 : undefined,
+          ...layoutTransformForNewClip(state.sceneGraph, asset.type),
         },
         shapeStyles: isShape
           ? {
@@ -733,6 +772,51 @@ const editorSlice = createSlice({
     setExportModePreference: (state, action: PayloadAction<'browser' | 'server'>) => {
       state.exportModePreference = action.payload;
     },
+    applyLayout: (state, action: PayloadAction<string>) => {
+      if (!state.sceneGraph) return;
+      snapshotHistory(state);
+
+      const layoutId = action.payload;
+      state.sceneGraph.layoutId = layoutId;
+      const cells = getLayoutCells(layoutId);
+
+      const mediaClips: Clip[] = [];
+      for (const track of state.sceneGraph.tracks) {
+        for (const clip of track.clips) {
+          if (clip.asset?.type === "video" || clip.asset?.type === "image") {
+            mediaClips.push(clip);
+          }
+        }
+      }
+
+      const singleColumn = cells.length === 1;
+      mediaClips.forEach((clip, index) => {
+        const cell = singleColumn ? cells[0] : cells[index];
+        if (!cell) {
+          if (clip.transform?.objectFit === "cover") {
+            clip.transform = {
+              ...(clip.transform || {}),
+              x: 0,
+              y: 0,
+              width: undefined,
+              height: undefined,
+              scale: 1,
+              objectFit: undefined,
+            };
+          }
+          return;
+        }
+        clip.transform = {
+          ...(clip.transform || {}),
+          x: cell.x,
+          y: cell.y,
+          width: cell.width,
+          height: cell.height,
+          scale: 1,
+          objectFit: "cover",
+        };
+      });
+    },
     resetEditor: (state) => {
       state.activeProjectId = null;
       state.sceneGraph = null;
@@ -781,6 +865,7 @@ export const {
   setExportProgressDetails,
   setExportUrl,
   setExportModePreference,
+  applyLayout,
   togglePlay,
   resetEditor,
 } = editorSlice.actions;

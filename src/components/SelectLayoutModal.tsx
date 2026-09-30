@@ -9,6 +9,11 @@ interface SelectLayoutModalProps {
 }
 
 export const LAYOUT_OPTIONS = [
+  { id: "1-Column", label: "Full Screen", icon: (
+    <div className="w-full h-full p-1 bg-slate-200 dark:bg-slate-700 rounded">
+      <div className="w-full h-full bg-slate-400 dark:bg-slate-500 rounded-sm"></div>
+    </div>
+  )},
   { id: "2:1 Horizontal", label: "2-Row Split", icon: (
     <div className="w-full h-full flex flex-col gap-1 p-1 bg-slate-200 dark:bg-slate-700 rounded">
       <div className="flex-1 bg-slate-400 dark:bg-slate-500 rounded-sm"></div>
@@ -109,7 +114,7 @@ export const SelectLayoutModal: React.FC<SelectLayoutModalProps> = ({
 
         {/* Content */}
         <div className="p-6">
-          <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-4">
+          <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-5 lg:grid-cols-10 gap-4">
             {LAYOUT_OPTIONS.map((layout) => {
               const isSelected = currentLayout === layout.id;
               return (

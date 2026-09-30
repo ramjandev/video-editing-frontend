@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store";
-import { updateClip } from "@/store/editorSlice";
+import { applyLayout, updateClip } from "@/store/editorSlice";
+import { drawLayoutStrokes } from "@/lib/layouts";
+import { clipAnimations, getTransitionFx, mediaTimeForClip, strokeTransitionEdge } from "@/lib/motion";
 import { triggerAutosave } from "@/store/thunks";
 import type { Clip } from "@/types";
 import { getMediaUrl } from "@/lib/api";
@@ -50,102 +52,9 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
     initialScale: 1.0,
   });
 
-  // Apply layout grid presets to active media clips on canvas
   const applyLayoutPreset = (layoutId: string) => {
     if (!sceneGraph) return;
-    const mediaClips: { clip: Clip; trackId: string }[] = [];
-    sceneGraph.tracks.forEach((track) => {
-      track.clips.forEach((clip) => {
-        if (clip.asset?.type === "video" || clip.asset?.type === "image") {
-          mediaClips.push({ clip, trackId: track.id });
-        }
-      });
-    });
-
-    if (mediaClips.length === 0) return;
-
-    mediaClips.forEach(({ clip, trackId }, idx) => {
-      let x = 0;
-      let y = 0;
-      let width = 960;
-      let height = 540;
-
-      if (layoutId === "2:1 Horizontal") {
-        height = 270;
-        y = idx % 2 === 0 ? -135 : 135;
-      } else if (layoutId === "2:1 Vertical") {
-        width = 480;
-        x = idx % 2 === 0 ? -240 : 240;
-      } else if (layoutId === "3-Row") {
-        height = 180;
-        y = (idx % 3 - 1) * 180;
-      } else if (layoutId === "3-Column") {
-        width = 320;
-        x = (idx % 3 - 1) * 320;
-      } else if (layoutId === "4-Grid") {
-        width = 480;
-        height = 270;
-        x = idx % 2 === 0 ? -240 : 240;
-        y = Math.floor(idx / 2) % 2 === 0 ? -135 : 135;
-      } else if (layoutId === "Top-BottomSplit") {
-        if (idx === 0) {
-          y = -135;
-          height = 270;
-        } else {
-          y = 135;
-          height = 270;
-          width = 480;
-          x = idx % 2 === 1 ? -240 : 240;
-        }
-      } else if (layoutId === "Top2-Bottom1") {
-        if (idx === 2 || (mediaClips.length <= 2 && idx === 1)) {
-          y = 135;
-          height = 270;
-        } else {
-          y = -135;
-          height = 270;
-          width = 480;
-          x = idx % 2 === 0 ? -240 : 240;
-        }
-      } else if (layoutId === "Left2-Right1") {
-        if (idx === 2 || (mediaClips.length <= 2 && idx === 1)) {
-          x = 240;
-          width = 480;
-        } else {
-          x = -240;
-          width = 480;
-          height = 270;
-          y = idx % 2 === 0 ? -135 : 135;
-        }
-      } else if (layoutId === "Left1-Right2") {
-        if (idx === 0) {
-          x = -240;
-          width = 480;
-        } else {
-          x = 240;
-          width = 480;
-          height = 270;
-          y = idx % 2 === 1 ? -135 : 135;
-        }
-      }
-
-      dispatch(
-        updateClip({
-          trackId,
-          clipId: clip.id,
-          updates: {
-            transform: {
-              ...(clip.transform || {}),
-              x,
-              y,
-              width,
-              height,
-            },
-          },
-        })
-      );
-    });
-
+    dispatch(applyLayout(layoutId));
     dispatch(triggerAutosave());
   };
 
@@ -435,7 +344,7 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
         if (clip.asset.type === "video" || clip.asset.type === "audio") {
           const media = videoRefs.current.get(clip.id);
           if (media) {
-            const currentClipTime = clip.trimIn + (currentPlayhead - clip.startTime);
+            const currentClipTime = mediaTimeForClip(clip, currentPlayhead);
             const isMuted = clip.muted || clip.volume === 0;
             media.muted = isMuted;
             media.volume = isMuted ? 0 : Math.min(1, Math.max(0, (clip.volume ?? 100) / 100));
@@ -522,10 +431,20 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
         if (clip.asset.type === "video") {
           const assetKey = clip.asset._id || clip.asset.public_id || clip.id;
           const tracker = seekMapRef.current.get(clip.id);
-          const currentClipTime = clip.trimIn + (currentPlayhead - clip.startTime);
+          const currentClipTime = mediaTimeForClip(clip, currentPlayhead);
           const video = videoRefs.current.get(clip.id) as HTMLVideoElement | undefined;
+          const transition = getTransitionFx(
+            currentSceneGraph,
+            clip,
+            currentPlayhead,
+            canvas.width,
+            canvas.height,
+          );
 
-          if (tracker?.isSeeking) {
+          const placedInLayout = clip.transform?.objectFit === "cover";
+          const slots = clipAnimations(clip);
+          const hasAnimation = !!(slots.enter?.type || slots.emphasis?.type || slots.exit?.type);
+          if (tracker?.isSeeking && !placedInLayout && !transition.active && !hasAnimation) {
             // Video is seeking — draw the nearest cached frame snapshot to prevent flicker
             const cachedFrame = getClosestFrame(assetKey, currentClipTime);
             if (cachedFrame) {
@@ -548,11 +467,38 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
           }
         }
 
+        const transition = getTransitionFx(
+          currentSceneGraph,
+          clip,
+          currentPlayhead,
+          canvas.width,
+          canvas.height,
+        );
+        if (transition.clipRect) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(transition.clipRect.x, transition.clipRect.y, transition.clipRect.w, transition.clipRect.h);
+          ctx.clip();
+        }
+        const assetKey = clip.asset?._id || clip.asset?.public_id || clip.id;
         drawClipToCanvas(ctx, clip, currentPlayhead, canvas.width, canvas.height, {
           videoElements: videoRefs.current,
           imageElements: imageElementsMap,
+        }, {
+          force: transition.force,
+          opacity: transition.opacity,
+          offsetX: transition.offsetX,
+          offsetY: transition.offsetY,
+          scale: transition.scale,
+          fallbackFrame: clip.asset?.type === "video"
+            ? getClosestFrame(assetKey, mediaTimeForClip(clip, currentPlayhead))
+            : null,
         });
+        if (transition.clipRect) ctx.restore();
+        strokeTransitionEdge(ctx, transition);
       });
+
+      drawLayoutStrokes(ctx, currentSceneGraph.layoutId, canvas.width, canvas.height);
 
       reqRef.current = requestAnimationFrame(render);
     };
@@ -736,6 +682,7 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
       <SelectLayoutModal
         isOpen={isLayoutModalOpen}
         onClose={() => setIsLayoutModalOpen(false)}
+        currentLayout={sceneGraph?.layoutId || undefined}
         onSelectLayout={(layoutId) => {
           applyLayoutPreset(layoutId);
           setIsLayoutModalOpen(false);

@@ -64,6 +64,7 @@ export interface TransformProps {
   scale?: number; // Scale multiplier (default 1.0)
   rotation?: number; // Rotation in degrees (0 to 360)
   opacity?: number; // Opacity (0.0 to 1.0)
+  objectFit?: "contain" | "cover";
 }
 
 export interface TextStyles {
@@ -103,8 +104,34 @@ export interface SliderStyles {
   slideDuration?: number;
 }
 
+export type AnimationCategory = "enter" | "emphasis" | "exit";
+
 export interface AnimationProps {
-  type?: "fade_in" | "fade_out" | "slide_left" | "slide_right" | "zoom_in" | "zoom_out" | "bounce";
+  type?: string;
+  category?: AnimationCategory;
+  duration?: number;
+}
+
+export interface ClipAnimations {
+  enter?: AnimationProps;
+  emphasis?: AnimationProps;
+  exit?: AnimationProps;
+}
+
+export type TransitionKind =
+  | "none"
+  | "crossfade"
+  | "dip_black"
+  | "wipe_left"
+  | "wipe_right"
+  | "wipe_up"
+  | "wipe_down"
+  | "slide_left"
+  | "slide_right"
+  | "zoom";
+
+export interface ClipTransition {
+  type: TransitionKind;
   duration?: number;
 }
 
@@ -124,6 +151,8 @@ export interface Clip {
   qrStyles?: QrStyles;
   sliderStyles?: SliderStyles;
   animation?: AnimationProps;
+  animations?: ClipAnimations;
+  transitionOut?: ClipTransition;
   effects?: Effect[];
   keyframes?: Keyframe[];
 }
@@ -140,6 +169,7 @@ export interface SceneGraph {
   fps: number;
   resolution: { w: number; h: number };
   tracks: Track[];
+  layoutId?: string | null;
 }
 
 export interface Project {
