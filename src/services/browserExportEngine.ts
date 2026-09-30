@@ -341,6 +341,21 @@ async function preloadAssets(sceneGraph: any): Promise<{
         imageElements.set(clip.assetId, img);
         if (clip.id) imageElements.set(clip.id, img);
       }
+      for (const url of clip.sliderStyles?.images || []) {
+        const resolved = getMediaUrl(url);
+        if (!resolved || imageElements.has(resolved)) continue;
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = resolved;
+        loadPromises.push(
+          new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            setTimeout(resolve, 3000);
+          }),
+        );
+        imageElements.set(resolved, img);
+      }
     }
   }
 

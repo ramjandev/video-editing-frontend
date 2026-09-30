@@ -1,7 +1,28 @@
+import { measureTextLayout } from "@/lib/elementBox";
+import { getMediaUrl } from "@/lib/api";
 import { LAYOUT_CANVAS_H, LAYOUT_CANVAS_W } from "@/lib/layouts";
 import { computeMotion, isClipOnScreen } from "@/lib/motion";
 import type { Clip, SceneGraph } from "@/types";
 import { drawQRCode } from "./qrGenerator";
+
+const slideImageCache = new Map<string, HTMLImageElement>();
+
+function slideImage(url: string, media: RenderContextMedia): HTMLImageElement | null {
+  const resolved = getMediaUrl(url);
+  if (!resolved) return null;
+  const preloaded = media.imageElements?.get(resolved) || media.imageElements?.get(url);
+  if (preloaded && preloaded.complete && preloaded.naturalWidth > 0) return preloaded;
+  let img = slideImageCache.get(resolved);
+  if (!img) {
+    img = new Image();
+    if (!resolved.startsWith("blob:") && !resolved.startsWith("data:")) {
+      img.crossOrigin = "anonymous";
+    }
+    img.src = resolved;
+    slideImageCache.set(resolved, img);
+  }
+  return img.complete && img.naturalWidth > 0 ? img : null;
+}
 
 export interface DrawClipOptions {
   force?: boolean;
@@ -66,6 +87,50 @@ export interface RenderContextMedia {
   imageElements?: Map<string, HTMLImageElement>;
 }
 
+const SLIDE_COLORS = ["#0284c7", "#7c3aed", "#ea580c", "#059669"];
+
+function drawSlide(
+  ctx: CanvasRenderingContext2D,
+  images: string[],
+  index: number,
+  width: number,
+  height: number,
+  media: RenderContextMedia,
+  offsetX: number,
+  opacity: number,
+  scale: number,
+) {
+  ctx.save();
+  ctx.globalAlpha *= Math.max(0, Math.min(1, opacity));
+  ctx.translate(offsetX, 0);
+  ctx.scale(scale, scale);
+  const url = images[index];
+  const img = url ? slideImage(url, media) : null;
+  if (img) {
+    const cover = Math.max(width / img.naturalWidth, height / img.naturalHeight);
+    const dw = img.naturalWidth * cover;
+    const dh = img.naturalHeight * cover;
+    ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+  } else {
+    const color = SLIDE_COLORS[index % SLIDE_COLORS.length];
+    const gradient = ctx.createLinearGradient(-width / 2, -height / 2, width / 2, height / 2);
+    gradient.addColorStop(0, color);
+    gradient.addColorStop(1, index % 2 === 0 ? "#0f172a" : "#ffffff");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(-width / 2, -height / 2, width, height);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 32px Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(images.length ? "Loading" : `Slide ${index + 1}`, 0, images.length ? 0 : -12);
+    if (!images.length) {
+      ctx.font = "16px Inter, sans-serif";
+      ctx.fillText("Add photos on the right", 0, 22);
+    }
+  }
+  ctx.restore();
+}
+
 export function drawClipToCanvas(
   ctx: CanvasRenderingContext2D,
   clip: Clip,
@@ -113,54 +178,38 @@ export function drawClipToCanvas(
   // ─── A. TEXT ELEMENT ──────────────────────────────────────────────────
   if (assetType === "text") {
     const styles = clip.textStyles || {};
-    const textStr = styles.content || content || "Title Goes There";
-    const fontSize = styles.fontSize || 36;
-    const fontFamily = styles.fontFamily || "Inter";
-    const fontWeight = styles.fontWeight || "Bold";
-    const fontStyle = styles.fontStyle || "normal";
-    const color = styles.color || "#ffffff";
-    const align = styles.align || "center";
-    const bgColor = styles.backgroundColor;
-    const bgPadding = styles.backgroundPadding || 12;
-    const borderRadius = styles.borderRadius || 8;
-
-    ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}, sans-serif`;
-    ctx.textAlign = align;
+    const layout = measureTextLayout(clip);
+    ctx.font = layout.font;
+    ctx.textAlign = layout.align;
     ctx.textBaseline = "middle";
 
-    const metrics = ctx.measureText(textStr);
-    const textWidth = metrics.width;
-    const textHeight = fontSize * 1.2;
-
-    // Draw Background Box if present
-    if (bgColor) {
-      ctx.fillStyle = bgColor;
-      const boxW = textWidth + bgPadding * 2;
-      const boxH = textHeight + bgPadding * 2;
-      let boxX = -boxW / 2;
-      if (align === "left") boxX = -bgPadding;
-      if (align === "right") boxX = -textWidth - bgPadding;
-      const boxY = -boxH / 2;
-
+    if (layout.background) {
+      ctx.fillStyle = layout.background;
       ctx.beginPath();
       if (typeof ctx.roundRect === "function") {
-        ctx.roundRect(boxX, boxY, boxW, boxH, borderRadius);
+        ctx.roundRect(-layout.width / 2, -layout.height / 2, layout.width, layout.height, layout.borderRadius);
       } else {
-        ctx.rect(boxX, boxY, boxW, boxH);
+        ctx.rect(-layout.width / 2, -layout.height / 2, layout.width, layout.height);
       }
       ctx.fill();
     }
 
-    // Draw Stroke if present
-    if (styles.strokeColor && styles.strokeWidth) {
-      ctx.strokeStyle = styles.strokeColor;
-      ctx.lineWidth = styles.strokeWidth;
-      ctx.strokeText(textStr, 0, 0);
-    }
+    const blockHeight = layout.lines.length * layout.lineHeight;
+    let textX = 0;
+    if (layout.align === "left") textX = -layout.width / 2 + layout.padding;
+    if (layout.align === "right") textX = layout.width / 2 - layout.padding;
+    let textY = -blockHeight / 2 + layout.lineHeight / 2;
 
-    // Draw Text Fill
-    ctx.fillStyle = color;
-    ctx.fillText(textStr, 0, 0);
+    for (const line of layout.lines) {
+      if (styles.strokeColor && styles.strokeWidth) {
+        ctx.strokeStyle = styles.strokeColor;
+        ctx.lineWidth = styles.strokeWidth;
+        ctx.strokeText(line, textX, textY);
+      }
+      ctx.fillStyle = layout.color;
+      ctx.fillText(line, textX, textY);
+      textY += layout.lineHeight;
+    }
   }
 
   // ─── B. QR CODE ELEMENT ────────────────────────────────────────────────
@@ -242,33 +291,51 @@ export function drawClipToCanvas(
   // ─── D. SLIDER / SLIDESHOW WIDGET ──────────────────────────────────────
   else if (assetType === "slider" || (assetType === "image" && content === "Slider Widget")) {
     const sliderStyles = clip.sliderStyles || {};
-    const images = sliderStyles.images && sliderStyles.images.length > 0
-      ? sliderStyles.images
-      : ["/assets/images/Image.png", "/assets/images/Create Template.png"];
+    const images = sliderStyles.images && sliderStyles.images.length > 0 ? sliderStyles.images : [];
+    const slideDuration = Math.max(0.4, sliderStyles.slideDuration || 2.5);
+    const totalSlides = images.length > 0 ? images.length : 3;
+    const width = transform.width || 480;
+    const height = transform.height || 270;
+    const blend = Math.min(0.9, Math.max(0.45, slideDuration * 0.42));
+    const safeElapsed = Math.max(0, elapsed);
+    const cycle = safeElapsed % slideDuration;
+    const index = Math.floor(safeElapsed / slideDuration) % totalSlides;
+    const progress = cycle > slideDuration - blend ? (cycle - (slideDuration - blend)) / blend : 0;
+    const transition = sliderStyles.transition || "fade";
+    const hold = slideDuration <= blend ? 0.5 : Math.min(1, cycle / Math.max(0.01, slideDuration - blend));
+    const ken = 1.04 + hold * 0.08;
 
-    const slideDuration = sliderStyles.slideDuration || 2.5;
-    const totalSlides = images.length;
-    const currentSlideIdx = Math.floor(elapsed / slideDuration) % totalSlides;
-
-    const width = transform.width || 360;
-    const height = transform.height || 220;
-
-    // Draw Slider Frame Box
-    ctx.fillStyle = "#1e293b";
     ctx.beginPath();
     if (typeof ctx.roundRect === "function") {
       ctx.roundRect(-width / 2, -height / 2, width, height, 12);
     } else {
       ctx.rect(-width / 2, -height / 2, width, height);
     }
-    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    const next = (index + 1) % totalSlides;
+    if (progress <= 0 || totalSlides < 2) {
+      drawSlide(ctx, images, index, width, height, media, 0, 1, ken);
+    } else if (transition === "left" || transition === "right") {
+      const dir = transition === "left" ? -1 : 1;
+      drawSlide(ctx, images, index, width, height, media, dir * progress * width, 1, 1.04);
+      drawSlide(ctx, images, next, width, height, media, dir * (progress - 1) * width, 1, 1.04);
+    } else if (transition === "zoom") {
+      drawSlide(ctx, images, index, width, height, media, 0, 1 - progress, 1 + progress * 0.35);
+      drawSlide(ctx, images, next, width, height, media, 0, progress, 1.28 - progress * 0.24);
+    } else {
+      drawSlide(ctx, images, index, width, height, media, 0, 1, ken);
+      drawSlide(ctx, images, next, width, height, media, 0, progress, 1.04);
+    }
+    ctx.restore();
 
-    // Draw Slide Number Label & Card Graphic
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 18px Inter, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(`Slide ${currentSlideIdx + 1} / ${totalSlides}`, 0, 0);
+    const dots = Math.min(totalSlides, 8);
+    for (let i = 0; i < dots; i++) {
+      ctx.beginPath();
+      ctx.arc(-((dots - 1) * 12) / 2 + i * 12, height / 2 - 16, i === index % dots ? 4.5 : 3, 0, Math.PI * 2);
+      ctx.fillStyle = i === index % dots ? "#ffffff" : "rgba(255,255,255,0.45)";
+      ctx.fill();
+    }
   }
 
   // ─── E. VIDEO & IMAGE CLIPS ────────────────────────────────────────────

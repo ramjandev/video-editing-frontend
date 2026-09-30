@@ -263,6 +263,20 @@ const ScrollableTimeline: React.FC<Props> = ({
                     {isAudio && (
                       <Volume2 className="w-3.5 h-3.5 mr-1.5 shrink-0 opacity-90" />
                     )}
+                    {clip.asset.type === "slider" &&
+                      Array.from({
+                        length: Math.max(1, clip.sliderStyles?.images?.length || 3),
+                      }).map((_, index) =>
+                        index === 0 ? null : (
+                          <div
+                            key={index}
+                            className="absolute inset-y-0 w-px bg-white/80 pointer-events-none"
+                            style={{
+                              left: `${index * (clip.sliderStyles?.slideDuration || 2.5) * pixelsPerSecond}px`,
+                            }}
+                          />
+                        ),
+                      )}
                     <span className="truncate flex-1 font-medium">
                       {isText
                         ? clip.asset.content || "Text"

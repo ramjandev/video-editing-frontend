@@ -1,4 +1,5 @@
 import {
+  addOptimisticAsset,
   deleteClip,
   duplicateClip,
   separateAudio,
@@ -8,10 +9,12 @@ import {
   updateClip,
 } from "@/store/editorSlice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { triggerAutosave } from "@/store/thunks";
+import { triggerAutosave, uploadAsset } from "@/store/thunks";
+import { getMediaUrl } from "@/lib/api";
 import { animationLabel, clipAnimations, findNextAbutting, findPrevAbutting, TRANSITIONS, transitionLabel } from "@/lib/motion";
 import type {
   AnimationCategory,
+  Asset,
   Clip,
   QrStyles,
   ShapeStyles,
@@ -21,6 +24,9 @@ import type {
   TransitionKind,
 } from "@/types";
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   ArrowLeft,
   ArrowRight,
   ChevronLeft,
@@ -37,18 +43,20 @@ import {
   Type,
   Volume2,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AnimationModal } from "./AnimationModal";
 import { SelectLayoutModal } from "./SelectLayoutModal";
 
 export function PropertiesPanel() {
   const dispatch = useAppDispatch();
-  const { selectedClipId, sceneGraph, isPlaying } = useAppSelector((s) => s.editor);
+  const { selectedClipId, sceneGraph, isPlaying, assets } = useAppSelector((s) => s.editor);
+  const imageAssets = assets.filter((asset) => asset.type === "image");
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
   const [isAnimationModalOpen, setIsAnimationModalOpen] = useState(false);
   const [modalCategory, setModalCategory] = useState<AnimationCategory>("enter");
+  const slideFileRef = useRef<HTMLInputElement>(null);
   const [currentLayout, setCurrentLayout] = useState("2:1 Horizontal");
 
   let selectedClip: Clip | null = null;
@@ -139,14 +147,69 @@ export function PropertiesPanel() {
   const handleUpdateSliderStyles = (updates: Partial<SliderStyles>) => {
     if (!selectedClip || !selectedTrackId) return;
     const newStyles = { ...(selectedClip.sliderStyles || {}), ...updates };
+    const count = Math.max(1, newStyles.images?.length || 3);
+    const needed = count * (newStyles.slideDuration || 2.5);
+    const length = selectedClip.endTime - selectedClip.startTime;
     dispatch(
       updateClip({
         trackId: selectedTrackId,
         clipId: selectedClip.id,
-        updates: { sliderStyles: newStyles },
+        updates: {
+          sliderStyles: newStyles,
+          ...(length < needed
+            ? { endTime: selectedClip.startTime + needed, trimOut: needed }
+            : {}),
+        },
       }),
     );
     dispatch(triggerAutosave());
+    if (updates.transition && selectedClip) {
+      const duration = newStyles.slideDuration || 2.5;
+      const blend = Math.min(0.9, Math.max(0.45, duration * 0.42));
+      const endTime = Math.max(selectedClip.endTime, selectedClip.startTime + needed);
+      const at = Math.min(endTime - 0.05, selectedClip.startTime + Math.max(0, duration - blend));
+      if (!isPlaying) dispatch(togglePlay());
+      dispatch(setPlayhead(Math.max(selectedClip.startTime, at)));
+    }
+  };
+
+  const playSliderFrom = (time: number) => {
+    if (!isPlaying) dispatch(togglePlay());
+    dispatch(setPlayhead(time));
+  };
+
+  const handleAddSlidePhotos = (files: File[]) => {
+    if (!selectedClip || !files.length) return;
+    const urls: string[] = [];
+    files.forEach((file) => {
+      if (!file.type.startsWith("image/")) return;
+      const blobUrl = URL.createObjectURL(file);
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      urls.push(blobUrl);
+      const optimistic: Asset = {
+        _id: tempId,
+        original_url: blobUrl,
+        preview_url: blobUrl,
+        duration: 5,
+        type: "image",
+        public_id: file.name,
+      };
+      dispatch(addOptimisticAsset(optimistic));
+      dispatch(uploadAsset({ file, tempId }));
+    });
+    if (!urls.length) return;
+    const images = [...(selectedClip.sliderStyles?.images || []), ...urls];
+    handleUpdateSliderStyles({ images });
+    playSliderFrom(selectedClip.startTime);
+  };
+
+  const moveSlide = (index: number, direction: -1 | 1) => {
+    const images = [...(sliderStyles.images || [])];
+    const target = index + direction;
+    if (target < 0 || target >= images.length) return;
+    const [item] = images.splice(index, 1);
+    images.splice(target, 0, item);
+    handleUpdateSliderStyles({ images });
   };
 
   const handleUpdateAnimation = (
@@ -568,6 +631,33 @@ export function PropertiesPanel() {
               </div>
 
               <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Align
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(
+                    [
+                      ["left", AlignLeft],
+                      ["center", AlignCenter],
+                      ["right", AlignRight],
+                    ] as const
+                  ).map(([align, Icon]) => (
+                    <button
+                      key={align}
+                      onClick={() => handleUpdateTextStyles({ align })}
+                      className={`flex items-center justify-center rounded-lg border py-1.5 cursor-pointer ${
+                        (textStyles.align || "center") === align
+                          ? "border-sky-500 bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-300"
+                          : "border-slate-200 text-slate-500 dark:border-slate-800"
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
                 <div className="flex justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
                   <span>Font Size</span>
                   <span>{textStyles.fontSize || 36}px</span>
@@ -779,6 +869,25 @@ export function PropertiesPanel() {
                   className="w-full accent-sky-500 cursor-pointer"
                 />
               </div>
+
+              {String(shapeStyles.shapeType || selectedClip.asset?.content || "").toLowerCase() === "rectangle" && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <span>Corner Radius</span>
+                    <span>{shapeStyles.borderRadius ?? 12}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={80}
+                    value={shapeStyles.borderRadius ?? 12}
+                    onChange={(e) =>
+                      handleUpdateShapeStyles({ borderRadius: parseInt(e.target.value) })
+                    }
+                    className="w-full accent-sky-500 cursor-pointer"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -823,6 +932,93 @@ export function PropertiesPanel() {
                   }
                   className="w-full accent-sky-500 cursor-pointer"
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Photos {(sliderStyles.images || []).length > 0 ? `(${sliderStyles.images?.length})` : ""}
+                  </label>
+                  <button
+                    onClick={() => slideFileRef.current?.click()}
+                    className="px-2.5 py-1 rounded-lg border border-sky-400 bg-sky-50 text-[11px] font-medium text-sky-700 cursor-pointer"
+                  >
+                    Add photos
+                  </button>
+                  <input
+                    ref={slideFileRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(event) => {
+                      handleAddSlidePhotos(Array.from(event.target.files || []));
+                      event.target.value = "";
+                    }}
+                  />
+                </div>
+                {(sliderStyles.images || []).length === 0 && (
+                  <p className="text-[11px] text-slate-400">
+                    Add two or more photos. They play in order with the transition above. Press play to watch the sample slides.
+                  </p>
+                )}
+                <div className="space-y-1.5">
+                  {(sliderStyles.images || []).map((url, index) => (
+                    <div key={`${url}-${index}`} className="flex items-center gap-2">
+                      <img
+                        src={getMediaUrl(url)}
+                        alt=""
+                        className="h-12 w-16 rounded-lg object-cover bg-slate-200 shrink-0"
+                      />
+                      <span className="text-[11px] text-slate-500 flex-1">Slide {index + 1}</span>
+                      <button
+                        onClick={() => moveSlide(index, -1)}
+                        className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+                        title="Move earlier"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => moveSlide(index, 1)}
+                        className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+                        title="Move later"
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleUpdateSliderStyles({
+                            images: (sliderStyles.images || []).filter((_, item) => item !== index),
+                          })
+                        }
+                        className="p-1 text-slate-400 hover:text-rose-500 cursor-pointer"
+                        title="Remove"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {imageAssets.length > 0 && (
+                  <select
+                    value=""
+                    onChange={(event) => {
+                      if (!event.target.value || !selectedClip) return;
+                      handleUpdateSliderStyles({
+                        images: [...(sliderStyles.images || []), event.target.value],
+                      });
+                      playSliderFrom(selectedClip.startTime);
+                    }}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
+                  >
+                    <option value="">Add from library</option>
+                    {imageAssets.map((asset) => (
+                      <option key={asset._id} value={asset.original_url || asset.preview_url}>
+                        {asset.public_id || "Image"}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
           )}

@@ -229,11 +229,17 @@ const editorSlice = createSlice({
         if (!exists) state.assets.unshift(mergedAsset);
       }
       if (state.sceneGraph) {
+        const serverUrl = action.payload.realAsset.original_url || action.payload.realAsset.preview_url;
         for (const track of state.sceneGraph.tracks) {
           for (const clip of track.clips) {
             if (clip.assetId === action.payload.tempId || clip.asset._id === action.payload.tempId) {
               clip.assetId = mergedAsset._id;
               clip.asset = mergedAsset;
+            }
+            if (localPreviewUrl && serverUrl && clip.sliderStyles?.images?.includes(localPreviewUrl)) {
+              clip.sliderStyles.images = clip.sliderStyles.images.map((url) =>
+                url === localPreviewUrl ? serverUrl : url,
+              );
             }
           }
         }
@@ -267,10 +273,27 @@ const editorSlice = createSlice({
       const isOverlay = ["text", "qr", "shape", "slider"].includes(asset.type);
       const targetType = isAudio ? "audio" : isOverlay ? "text" : "video";
 
-      const clipDuration = asset.duration || 5;
       const isShape = asset.type === "shape";
       const isText = asset.type === "text";
+      const isQr = asset.type === "qr";
+      const isSlider = asset.type === "slider";
       const isLine = asset.content === "Line" || asset.content === "line";
+      const sliderImages = isSlider
+        ? state.assets
+            .filter((item) => item.type === "image")
+            .slice(0, 8)
+            .map((item) => item.original_url || item.preview_url)
+            .filter((url): url is string => !!url)
+        : [];
+      const slideDuration = 2.5;
+      const clipDuration = isSlider
+        ? Math.max(asset.duration || 5, Math.max(sliderImages.length, 3) * slideDuration)
+        : asset.duration || 5;
+      const shapeSize = isLine
+        ? { width: 320, height: 8 }
+        : asset.content === "Rectangle"
+          ? { width: 280, height: 160 }
+          : { width: 200, height: 200 };
 
       const newClip: Clip = {
         id: `clip_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -286,17 +309,18 @@ const editorSlice = createSlice({
           scale: 1,
           rotation: 0,
           opacity: 1,
-          width: isShape ? 200 : undefined,
-          height: isShape ? 150 : undefined,
+          ...(isShape ? shapeSize : {}),
+          ...(isQr ? { width: 220, height: 220 } : {}),
+          ...(isSlider ? { width: 480, height: 270 } : {}),
           ...layoutTransformForNewClip(state.sceneGraph, asset.type),
         },
         shapeStyles: isShape
           ? {
               shapeType: (asset.content as any) || "Rectangle",
               fillColor: isLine ? "transparent" : "#38bdf8",
-              strokeColor: "#38bdf8",
-              strokeWidth: isLine ? 4 : 0,
-              borderRadius: 8,
+              strokeColor: isLine ? "#ffffff" : "#0f172a",
+              strokeWidth: isLine ? 6 : 0,
+              borderRadius: isLine ? 0 : 12,
             }
           : undefined,
         textStyles: isText
@@ -307,6 +331,23 @@ const editorSlice = createSlice({
               fontWeight: "Bold",
               color: "#ffffff",
               align: "center",
+              backgroundColor: "#0f172a",
+              backgroundPadding: 14,
+              borderRadius: 8,
+            }
+          : undefined,
+        qrStyles: isQr
+          ? {
+              qrContent: asset.content || "https://example.com",
+              foregroundColor: "#000000",
+              backgroundColor: "#ffffff",
+            }
+          : undefined,
+        sliderStyles: isSlider
+          ? {
+              images: sliderImages,
+              transition: "fade",
+              slideDuration,
             }
           : undefined,
       };

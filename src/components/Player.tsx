@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store";
-import { applyLayout, updateClip } from "@/store/editorSlice";
+import { applyLayout, setSelectedClip, updateClip } from "@/store/editorSlice";
+import { cssFontWeight, elementSize, isDesignElement, isLineShape, pointInElement } from "@/lib/elementBox";
 import { drawLayoutStrokes } from "@/lib/layouts";
 import { clipAnimations, getTransitionFx, mediaTimeForClip, strokeTransitionEdge } from "@/lib/motion";
 import { triggerAutosave } from "@/store/thunks";
@@ -30,6 +31,7 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
   const dispatch = useAppDispatch();
   const sceneGraph = useAppSelector((state) => state.editor.sceneGraph);
   const selectedClipId = useAppSelector((state) => state.editor.selectedClipId);
+  const playhead = useAppSelector((state) => state.editor.playhead);
 
   const videoRefs = useRef<Map<string, HTMLMediaElement>>(new Map());
   const seekMapRef = useRef<Map<string, MediaSeekTracker>>(new Map());
@@ -42,15 +44,27 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
 
   // Interactive Canvas Bounding Box Drag State
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragMode, setDragMode] = useState<"move" | "resize" | null>(null);
-  const dragStartRef = useRef<{ mouseX: number; mouseY: number; initialX: number; initialY: number; initialScale: number }>({
-    mouseX: 0,
-    mouseY: 0,
-    initialX: 0,
-    initialY: 0,
-    initialScale: 1.0,
-  });
+  const [editingText, setEditingText] = useState(false);
+  type DragHandle = "move" | "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw" | "rotate";
+  const dragRef = useRef<{
+    handle: DragHandle;
+    mouseX: number;
+    mouseY: number;
+    initialX: number;
+    initialY: number;
+    initialScale: number;
+    initialW: number;
+    initialH: number;
+    initialRot: number;
+    initialFont: number;
+    initialStroke: number;
+    clipId: string;
+    trackId: string;
+    overlay: boolean;
+    isText: boolean;
+    isLine: boolean;
+    hadWidth: boolean;
+  } | null>(null);
 
   const applyLayoutPreset = (layoutId: string) => {
     if (!sceneGraph) return;
@@ -507,88 +521,196 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
     return () => cancelAnimationFrame(reqRef.current);
   }, [dispatch]);
 
-  // Handle Dragging Position & Scale on Canvas
-  const handleMouseDown = (e: React.MouseEvent, mode: "move" | "resize") => {
-    if (!selectedClip) return;
+  const startDrag = (e: { clientX: number; clientY: number; preventDefault: () => void; stopPropagation: () => void }, handle: DragHandle, clip: Clip, trackId: string) => {
+    e.preventDefault();
     e.stopPropagation();
-    setIsDragging(true);
-    setDragMode(mode);
-
-    const initialTransform = selectedClip.transform || {};
-    dragStartRef.current = {
+    const box = elementSize(clip);
+    const transform = clip.transform || {};
+    dragRef.current = {
+      handle,
       mouseX: e.clientX,
       mouseY: e.clientY,
-      initialX: initialTransform.x ?? 0,
-      initialY: initialTransform.y ?? 0,
-      initialScale: initialTransform.scale ?? 1.0,
+      initialX: transform.x ?? 0,
+      initialY: transform.y ?? 0,
+      initialScale: transform.scale ?? 1,
+      initialW: box.width,
+      initialH: box.height,
+      initialRot: transform.rotation ?? 0,
+      initialFont: clip.textStyles?.fontSize || 48,
+      initialStroke: clip.shapeStyles?.strokeWidth ?? 6,
+      clipId: clip.id,
+      trackId,
+      overlay: isDesignElement(clip),
+      isText: clip.asset?.type === "text",
+      isLine: isLineShape(clip),
+      hadWidth: transform.width != null,
     };
-  };
-
-  useEffect(() => {
-    if (!isDragging) return;
+    const localDelta = (deltaX: number, deltaY: number, rotation: number) => {
+      const rad = (-rotation * Math.PI) / 180;
+      return {
+        x: deltaX * Math.cos(rad) - deltaY * Math.sin(rad),
+        y: deltaX * Math.sin(rad) + deltaY * Math.cos(rad),
+      };
+    };
+    const toCanvas = (x: number, y: number, rotation: number) => {
+      const rad = (rotation * Math.PI) / 180;
+      return {
+        x: x * Math.cos(rad) - y * Math.sin(rad),
+        y: x * Math.sin(rad) + y * Math.cos(rad),
+      };
+    };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!selectedClip || !selectedTrackId) return;
+      const drag = dragRef.current;
+      if (!drag) return;
+      const editor = store.getState().editor;
+      const track = editor.sceneGraph?.tracks.find((item) => item.id === drag.trackId);
+      const clip = track?.clips.find((item) => item.id === drag.clipId);
+      if (!clip) return;
 
-      const deltaX = (e.clientX - dragStartRef.current.mouseX) / zoomScale;
-      const deltaY = (e.clientY - dragStartRef.current.mouseY) / zoomScale;
+      const deltaX = (e.clientX - drag.mouseX) / zoomScale;
+      const deltaY = (e.clientY - drag.mouseY) / zoomScale;
+      const transform = { ...(clip.transform || {}) };
 
-      if (dragMode === "move") {
-        const newX = Math.round(dragStartRef.current.initialX + deltaX);
-        const newY = Math.round(dragStartRef.current.initialY + deltaY);
-        dispatch(
-          updateClip({
-            trackId: selectedTrackId,
-            clipId: selectedClip.id,
-            updates: {
-              transform: {
-                ...(selectedClip.transform || {}),
-                x: newX,
-                y: newY,
-              },
-            },
-          })
-        );
-      } else if (dragMode === "resize") {
-        const scaleDelta = (deltaX + deltaY) / 200;
-        const newScale = Math.max(0.2, Math.min(3.0, dragStartRef.current.initialScale + scaleDelta));
-        dispatch(
-          updateClip({
-            trackId: selectedTrackId,
-            clipId: selectedClip.id,
-            updates: {
-              transform: {
-                ...(selectedClip.transform || {}),
-                scale: parseFloat(newScale.toFixed(2)),
-              },
-            },
-          })
-        );
+      if (drag.handle === "move") {
+        dispatch(updateClip({
+          trackId: drag.trackId,
+          clipId: drag.clipId,
+          updates: { transform: { ...transform, x: Math.round(drag.initialX + deltaX), y: Math.round(drag.initialY + deltaY) } },
+        }));
+        return;
       }
+
+      if (drag.handle === "rotate") {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const cx = rect.left + ((480 + drag.initialX) / 960) * rect.width;
+        const cy = rect.top + ((270 + drag.initialY) / 540) * rect.height;
+        const pointer = Math.atan2(e.clientX - cx, -(e.clientY - cy)) * (180 / Math.PI);
+        const origin = Math.atan2(drag.mouseX - cx, -(drag.mouseY - cy)) * (180 / Math.PI);
+        const rotation = Math.round((drag.initialRot + pointer - origin + 360) % 360);
+        dispatch(updateClip({
+          trackId: drag.trackId,
+          clipId: drag.clipId,
+          updates: { transform: { ...transform, rotation } },
+        }));
+        return;
+      }
+
+      if (!drag.overlay) {
+        const scaleDelta = (deltaX + deltaY) / 200;
+        const scale = Math.max(0.2, Math.min(3, drag.initialScale + scaleDelta));
+        dispatch(updateClip({
+          trackId: drag.trackId,
+          clipId: drag.clipId,
+          updates: { transform: { ...transform, scale: parseFloat(scale.toFixed(2)) } },
+        }));
+        return;
+      }
+
+      const local = localDelta(deltaX, deltaY, drag.initialRot);
+      const signW = drag.handle.includes("e") ? 1 : drag.handle.includes("w") ? -1 : 0;
+      const signH = drag.handle.includes("s") ? 1 : drag.handle.includes("n") ? -1 : 0;
+      const corner = signW !== 0 && signH !== 0;
+      const deltaW = signW * local.x;
+      const deltaH = signH * local.y;
+      const shift = (appliedW: number, appliedH: number) => {
+        const moved = toCanvas(signW * appliedW / 2, signH * appliedH / 2, drag.initialRot);
+        return {
+          x: Math.round(drag.initialX + moved.x),
+          y: Math.round(drag.initialY + moved.y),
+        };
+      };
+
+      if (drag.isLine) {
+        const width = Math.max(24, drag.initialW + (signW ? deltaW : 0));
+        const stroke = signH ? Math.max(2, Math.min(48, drag.initialStroke + deltaH)) : drag.initialStroke;
+        const pos = shift(width - drag.initialW, 0);
+        dispatch(updateClip({
+          trackId: drag.trackId,
+          clipId: drag.clipId,
+          updates: {
+            transform: { ...transform, ...pos, width, height: Math.max(8, stroke) },
+            shapeStyles: { ...(clip.shapeStyles || {}), strokeWidth: stroke },
+          },
+        }));
+        return;
+      }
+
+      if (drag.isText && (drag.handle === "e" || drag.handle === "w")) {
+        const width = Math.max(48, drag.initialW + deltaW);
+        const pos = shift(width - drag.initialW, 0);
+        dispatch(updateClip({
+          trackId: drag.trackId,
+          clipId: drag.clipId,
+          updates: { transform: { ...transform, ...pos, width } },
+        }));
+        return;
+      }
+
+      if (drag.isText) {
+        const ratioW = (drag.initialW + (signW ? deltaW : 0)) / drag.initialW;
+        const ratioH = (drag.initialH + (signH ? deltaH : 0)) / drag.initialH;
+        const ratio = corner
+          ? (Math.abs(ratioW - 1) > Math.abs(ratioH - 1) ? ratioW : ratioH)
+          : ratioH;
+        const fontSize = Math.round(Math.max(10, Math.min(240, drag.initialFont * Math.max(0.2, ratio))));
+        dispatch(updateClip({
+          trackId: drag.trackId,
+          clipId: drag.clipId,
+          updates: {
+            transform: drag.hadWidth
+              ? { ...transform, width: Math.max(48, drag.initialW * (fontSize / drag.initialFont)) }
+              : transform,
+            textStyles: { ...(clip.textStyles || {}), fontSize },
+          },
+        }));
+        return;
+      }
+
+      let newW = signW ? Math.max(24, drag.initialW + deltaW) : drag.initialW;
+      let newH = signH ? Math.max(24, drag.initialH + deltaH) : drag.initialH;
+      if (corner) {
+        const ratioW = newW / drag.initialW;
+        const ratioH = newH / drag.initialH;
+        const ratio = Math.abs(ratioW - 1) > Math.abs(ratioH - 1) ? ratioW : ratioH;
+        newW = Math.max(24, drag.initialW * ratio);
+        newH = Math.max(24, drag.initialH * ratio);
+      }
+      const pos = shift(newW - drag.initialW, newH - drag.initialH);
+      dispatch(updateClip({
+        trackId: drag.trackId,
+        clipId: drag.clipId,
+        updates: { transform: { ...transform, ...pos, width: newW, height: newH } },
+      }));
     };
 
     const handleMouseUp = () => {
-      setIsDragging(false);
-      setDragMode(null);
+      dragRef.current = null;
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
       dispatch(triggerAutosave());
     };
 
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDragging, dragMode, selectedClip, selectedTrackId, zoomScale, dispatch]);
+  };
+
+  useEffect(() => {
+    setEditingText(false);
+  }, [selectedClipId]);
 
   // Calculate selected clip bounding box position on canvas
   const selTransform = selectedClip?.transform || {};
   const selX = (selTransform.x ?? 0) + 480;
   const selY = (selTransform.y ?? 0) + 270;
   const selScale = selTransform.scale ?? 1.0;
-  const selWidth = (selTransform.width || 320) * selScale;
-  const selHeight = (selTransform.height || 200) * selScale;
+  const measured = selectedClip && isDesignElement(selectedClip) ? elementSize(selectedClip) : null;
+  const selWidth = (measured?.width || selTransform.width || 320) * selScale;
+  const selHeight = (measured?.height || selTransform.height || 200) * selScale;
   const selRot = selTransform.rotation ?? 0;
+  const designSelected = !!selectedClip && isDesignElement(selectedClip);
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center relative w-full h-full p-6 select-none overflow-hidden bg-slate-100 dark:bg-slate-900">
@@ -625,13 +747,32 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
           width={960}
           height={540}
           className="w-[960px] h-[540px] block"
+          onMouseDown={(event) => {
+            if (!sceneGraph) return;
+            const rect = event.currentTarget.getBoundingClientRect();
+            const x = ((event.clientX - rect.left) / rect.width) * 960;
+            const y = ((event.clientY - rect.top) / rect.height) * 540;
+            const hit = [...getSortedActiveClips(sceneGraph, playhead)]
+              .reverse()
+              .find((clip) => isDesignElement(clip) && pointInElement(clip, x, y));
+            if (!hit) {
+              dispatch(setSelectedClip(null));
+              return;
+            }
+            const track = sceneGraph.tracks.find((item) => item.clips.some((clip) => clip.id === hit.id));
+            dispatch(setSelectedClip(hit.id));
+            if (track) startDrag(event, "move", hit, track.id);
+          }}
         />
 
         {/* Selected Element Interactive Transform Bounding Box Overlay */}
-        {selectedClip && (
+        {selectedClip && selectedTrackId && (
           <div
-            onMouseDown={(e) => handleMouseDown(e, "move")}
-            className="absolute border-2 border-sky-400 cursor-move rounded-xs transition-opacity z-30"
+            onMouseDown={(e) => startDrag(e, "move", selectedClip, selectedTrackId)}
+            onDoubleClick={() => {
+              if (selectedClip.asset?.type === "text") setEditingText(true);
+            }}
+            className="absolute border-2 border-sky-400 cursor-move z-30"
             style={{
               left: `${selX - selWidth / 2}px`,
               top: `${selY - selHeight / 2}px`,
@@ -641,39 +782,63 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
               transformOrigin: "center center",
             }}
           >
-            {/* 8 Transform Control Dots for Resizing */}
+            {editingText && selectedClip.asset?.type === "text" && (
+              <textarea
+                autoFocus
+                value={selectedClip.textStyles?.content ?? selectedClip.asset.content ?? ""}
+                onMouseDown={(event) => event.stopPropagation()}
+                onChange={(event) => {
+                  dispatch(updateClip({
+                    trackId: selectedTrackId,
+                    clipId: selectedClip.id,
+                    updates: {
+                      textStyles: { ...(selectedClip.textStyles || {}), content: event.target.value },
+                      asset: { ...selectedClip.asset, content: event.target.value },
+                    },
+                  }));
+                }}
+                onBlur={() => {
+                  setEditingText(false);
+                  dispatch(triggerAutosave());
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") (event.target as HTMLTextAreaElement).blur();
+                }}
+                className="absolute inset-0 h-full w-full resize-none bg-transparent text-center outline-none"
+                style={{
+                  color: selectedClip.textStyles?.color || "#ffffff",
+                  fontFamily: selectedClip.textStyles?.fontFamily || "Inter",
+                  fontWeight: cssFontWeight(selectedClip.textStyles?.fontWeight),
+                  fontSize: `${(selectedClip.textStyles?.fontSize || 48) * selScale}px`,
+                  textAlign: selectedClip.textStyles?.align || "center",
+                  lineHeight: 1.25,
+                  padding: `${((selectedClip.textStyles?.backgroundColor ? selectedClip.textStyles.backgroundPadding ?? 14 : 6) * selScale)}px`,
+                }}
+              />
+            )}
             <div
-              onMouseDown={(e) => handleMouseDown(e, "resize")}
-              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -top-2 -left-2 shadow-md cursor-nwse-resize"
+              onMouseDown={(e) => startDrag(e, "rotate", selectedClip, selectedTrackId)}
+              className="absolute left-1/2 -top-7 h-3.5 w-3.5 -translate-x-1/2 rounded-full border-2 border-sky-500 bg-white shadow-md cursor-grab"
             />
-            <div
-              onMouseDown={(e) => handleMouseDown(e, "resize")}
-              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -top-2 left-1/2 -translate-x-1/2 shadow-md cursor-ns-resize"
-            />
-            <div
-              onMouseDown={(e) => handleMouseDown(e, "resize")}
-              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -top-2 -right-2 shadow-md cursor-nesw-resize"
-            />
-            <div
-              onMouseDown={(e) => handleMouseDown(e, "resize")}
-              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute top-1/2 -left-2 -translate-y-1/2 shadow-md cursor-ew-resize"
-            />
-            <div
-              onMouseDown={(e) => handleMouseDown(e, "resize")}
-              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute top-1/2 -right-2 -translate-y-1/2 shadow-md cursor-ew-resize"
-            />
-            <div
-              onMouseDown={(e) => handleMouseDown(e, "resize")}
-              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -bottom-2 -left-2 shadow-md cursor-nesw-resize"
-            />
-            <div
-              onMouseDown={(e) => handleMouseDown(e, "resize")}
-              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -bottom-2 left-1/2 -translate-x-1/2 shadow-md cursor-ns-resize"
-            />
-            <div
-              onMouseDown={(e) => handleMouseDown(e, "resize")}
-              className="w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full absolute -bottom-2 -right-2 shadow-md cursor-nwse-resize"
-            />
+            <div className="absolute left-1/2 -top-3.5 h-3.5 w-px -translate-x-1/2 bg-sky-400" />
+            {(
+              [
+                ["nw", "-top-2 -left-2 cursor-nwse-resize"],
+                ["n", "-top-2 left-1/2 -translate-x-1/2 cursor-ns-resize"],
+                ["ne", "-top-2 -right-2 cursor-nesw-resize"],
+                ["w", "top-1/2 -left-2 -translate-y-1/2 cursor-ew-resize"],
+                ["e", "top-1/2 -right-2 -translate-y-1/2 cursor-ew-resize"],
+                ["sw", "-bottom-2 -left-2 cursor-nesw-resize"],
+                ["s", "-bottom-2 left-1/2 -translate-x-1/2 cursor-ns-resize"],
+                ["se", "-bottom-2 -right-2 cursor-nwse-resize"],
+              ] as const
+            ).map(([handle, className]) => (
+              <div
+                key={handle}
+                onMouseDown={(e) => startDrag(e, designSelected ? handle : "se", selectedClip, selectedTrackId)}
+                className={`absolute h-3.5 w-3.5 rounded-full border-2 border-sky-500 bg-white shadow-md ${className}`}
+              />
+            ))}
           </div>
         )}
       </div>
