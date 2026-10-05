@@ -2,10 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
 import { setExportModePreference, closeExportModal } from '@/store/editorSlice';
 import { exportVideo } from '@/store/thunks';
-import { addToast } from '@/store/uiSlice';
-import { X, Download, CheckCircle2, Zap, Loader2, ExternalLink, Cpu, Server, Play, Film } from 'lucide-react';
-import { getMediaUrl } from '@/lib/api';
-import { downloadMediaFile } from '@/lib/utils';
+import { X, CheckCircle2, Zap, Cpu, Server, Play, Film } from 'lucide-react';
 import { estimateRenderTimeSec, detectCapabilities } from '@/services/browserCapabilities';
 import { cancelCurrentBrowserExport } from '@/services/browserExportEngine';
 
@@ -27,20 +24,18 @@ export function ExportModal() {
     sceneGraph,
   } = useAppSelector((state) => state.editor);
 
-  const [isDownloading, setIsDownloading] = useState(false);
   const [selectedTarget, setSelectedTarget] = useState<'browser' | 'server'>('server');
   const [estimatedSec, setEstimatedSec] = useState<number | null>(null);
 
-  // Pre-flight calculation: estimate render workload & pre-select recommended target
+  // Pre-flight calculation: estimate render workload & pre-select Cloud Server as recommended
   useEffect(() => {
     if (isExportModalOpen && sceneGraph && !isExporting) {
       detectCapabilities().then((caps) => {
         const estSec = estimateRenderTimeSec(sceneGraph, caps);
         setEstimatedSec(estSec);
-        // Pre-select recommended target (> 7 min = server, < 7 min = browser)
-        const recommended = estSec >= 420 ? 'server' : 'browser';
-        setSelectedTarget(recommended);
-        dispatch(setExportModePreference(recommended));
+        // Always default to Cloud Server (FFmpeg) for maximum speed & performance
+        setSelectedTarget('server');
+        dispatch(setExportModePreference('server'));
       });
     }
   }, [isExportModalOpen, sceneGraph]);
@@ -74,44 +69,16 @@ export function ExportModal() {
     return `${seconds} s`;
   };
 
-  const handleDownload = async (e?: React.MouseEvent) => {
-    if (e) e.preventDefault();
-    if (!exportUrl || isDownloading) return;
-
-    const filename = getFilenameFromUrl(exportUrl);
-    setIsDownloading(true);
-    dispatch(addToast({ type: 'info', message: `Starting download for "${filename}"...` }));
-
-    try {
-      await downloadMediaFile(exportUrl, filename);
-      dispatch(addToast({ type: 'success', message: `Download initiated for "${filename}"!` }));
-    } catch (err) {
-      console.error('Download error:', err);
-      dispatch(addToast({ type: 'error', message: 'Failed to download file directly. Opening in new tab.' }));
-      window.open(getMediaUrl(exportUrl), '_blank');
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
   const handleStartRender = () => {
     dispatch(setExportModePreference(selectedTarget));
     dispatch(exportVideo({ mode: selectedTarget }));
   };
-
-  // Automatically trigger download on export completion
-  useEffect(() => {
-    if (exportUrl && isExporting) {
-      handleDownload();
-    }
-  }, [exportUrl]);
 
   if (!isExportModalOpen && !isExporting) return null;
 
   const durationSec = sceneGraph?.duration || 0;
   const fps = sceneGraph?.fps || 30;
   const totalFrames = Math.ceil(durationSec * fps);
-  const isOverSevenMin = estimatedSec !== null ? estimatedSec >= 420 : durationSec >= 420;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-150">
@@ -137,7 +104,7 @@ export function ExportModal() {
 
         <h2 className="text-base font-extrabold text-slate-900 dark:text-white mb-1">
           {exportUrl
-            ? 'Export Masterpiece Complete!'
+            ? 'Saved to Tape Screen Library!'
             : isExporting
             ? 'Exporting Video Project'
             : 'Export Video Settings'}
@@ -173,8 +140,8 @@ export function ExportModal() {
             {/* Render Target Selection Label */}
             <div className="w-full text-left font-semibold text-slate-700 dark:text-slate-300 mb-2 flex items-center justify-between">
               <span>Choose Render Engine Target:</span>
-              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-normal">
-                {isOverSevenMin ? '⚠️ Over 7 min project' : '⚡ Under 7 min project'}
+              <span className="text-[10px] text-sky-600 dark:text-sky-400 font-semibold">
+                ⚡ Cloud Server Recommended
               </span>
             </div>
 
@@ -190,17 +157,15 @@ export function ExportModal() {
                     : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-700'
                 }`}
               >
-                {isOverSevenMin && (
-                  <span className="absolute top-0 right-0 bg-indigo-600 text-white text-[9px] px-1.5 py-0.5 rounded-bl font-semibold uppercase">
-                    Recommended
-                  </span>
-                )}
+                <span className="absolute top-0 right-0 bg-indigo-600 text-white text-[9px] px-1.5 py-0.5 rounded-bl font-semibold uppercase">
+                  Recommended
+                </span>
                 <div className="flex items-center gap-2 mb-1.5">
                   <Server className="w-4 h-4 text-indigo-500 shrink-0" />
                   <span className="font-bold text-xs">Cloud Server</span>
                 </div>
                 <p className="text-[10px] opacity-80 leading-normal">
-                  Renders on server via FFmpeg. 0% CPU load on your PC.
+                  High-speed server FFmpeg rendering. 0% CPU load on your PC.
                 </p>
               </button>
 
@@ -214,13 +179,8 @@ export function ExportModal() {
                     : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-700'
                 }`}
               >
-                {!isOverSevenMin && (
-                  <span className="absolute top-0 right-0 bg-emerald-600 text-white text-[9px] px-1.5 py-0.5 rounded-bl font-semibold uppercase">
-                    Recommended
-                  </span>
-                )}
                 <div className="flex items-center gap-2 mb-1.5">
-                  <Cpu className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <Cpu className="w-4 h-4 text-slate-500 shrink-0" />
                   <span className="font-bold text-xs">Local Browser</span>
                 </div>
                 <p className="text-[10px] opacity-80 leading-normal">
@@ -254,7 +214,7 @@ export function ExportModal() {
           /* ────────────────────────────────────────────────────────────── */
           <div className="flex flex-col items-center w-full mt-2">
             <p className="text-xs text-slate-500 dark:text-slate-400 text-center mb-4 leading-relaxed">
-              Your video project was successfully composited and encoded.
+              Your video project was successfully rendered and saved to your Tape Media Library.
             </p>
 
             <div className="w-full bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-xl p-3 mb-4 flex items-center justify-between text-xs">
@@ -262,42 +222,22 @@ export function ExportModal() {
                 {getFilenameFromUrl(exportUrl)}
               </span>
               <span className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold">
-                Ready
+                Saved in Tape App
               </span>
             </div>
 
-            {/* Main Download Button */}
-            <button
-              onClick={handleDownload}
-              disabled={isDownloading}
-              className="bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-2.5 px-6 rounded-xl w-full text-center transition-all shadow-md hover:shadow-sky-500/25 flex items-center justify-center gap-2 mb-2 cursor-pointer text-xs disabled:opacity-70"
-            >
-              {isDownloading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Downloading...
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" /> Download Video File
-                </>
-              )}
-            </button>
-
-            {/* Direct Open Link fallback */}
-            <a
-              href={getMediaUrl(exportUrl)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 mb-4 py-1"
-            >
-              <ExternalLink className="w-3 h-3" /> Open Video in New Tab
-            </a>
+            <div className="w-full bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60 rounded-xl p-3 mb-4 text-[11px] text-sky-800 dark:text-sky-300 flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-sky-500 shrink-0 mt-0.5" />
+              <span>
+                Exported media is securely stored in your Tape Digital Screen assets and is ready to be published to your screens.
+              </span>
+            </div>
 
             <button
               onClick={handleClose}
-              className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 text-xs py-1.5 transition-colors cursor-pointer"
+              className="bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-2.5 px-6 rounded-xl w-full text-center transition-all shadow-md hover:shadow-sky-500/25 flex items-center justify-center gap-2 mb-2 cursor-pointer text-xs"
             >
-              Back to Studio Editor
+              Done & Return to Studio
             </button>
           </div>
         ) : (

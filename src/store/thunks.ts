@@ -282,7 +282,7 @@ export const exportVideo = createAsyncThunk(
           onComplete: (url) => {
             dispatch(setExportUrl(url));
             dispatch(loadAssets());
-            dispatch(addToast({ type: 'success', message: '🎬 Browser export complete! Click download to save.' }));
+            dispatch(addToast({ type: 'success', message: '🎬 Browser export complete! Saved to Tape Screen Library.' }));
           },
           onError: (message) => {
             console.warn('[BrowserExport] Failed, falling back to server:', message);
@@ -345,7 +345,7 @@ export const exportVideo = createAsyncThunk(
             } else if (data.type === 'complete') {
               dispatch(setExportUrl(data.url));
               dispatch(loadAssets());
-              dispatch(addToast({ type: 'success', message: '🎬 Export complete! Click download to save.' }));
+              dispatch(addToast({ type: 'success', message: '🎬 Export complete! Saved to Tape Screen Library.' }));
             } else if (data.type === 'error') {
               console.error('Export error:', data.message);
               dispatch(setExporting(false));

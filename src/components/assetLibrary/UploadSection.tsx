@@ -186,7 +186,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
             >
               {/* Top Action Buttons: Download & Delete */}
               <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-30 opacity-0 group-hover:opacity-100 transition-opacity">
-                {canDownload && (
+                {canDownload && !isExport && (
                   <button
                     onClick={async (e) => {
                       e.stopPropagation();
@@ -311,27 +311,11 @@ const UploadSection: React.FC<UploadSectionProps> = ({
                     "Media"}
                 </span>
 
-                {/* Prominent Download button for Exported Videos */}
-                {isExport && canDownload && (
-                  <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const filename =
-                        asset.public_id || `export_${Date.now()}.mp4`;
-                      dispatch(
-                        addToast({
-                          type: "info",
-                          message: `Downloading export "${filename}"...`,
-                        }),
-                      );
-                      await downloadMediaFile(asset.original_url, filename);
-                    }}
-                    className="mt-1.5 w-full py-1 px-2 bg-sky-500 hover:bg-sky-400 text-white font-semibold text-[10px] rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer shadow-xs"
-                    title="Download Exported Video"
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>Download</span>
-                  </button>
+                {/* Tape Screen Asset Indicator */}
+                {isExport && (
+                  <span className="mt-1 inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+                    Tape Screen Asset
+                  </span>
                 )}
               </div>
             </div>
