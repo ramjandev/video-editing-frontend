@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { setWorkerEnabled } from '@/store/workerSlice';
-import { Cpu, Zap, Activity, ChevronDown, CheckCircle2, Clock } from 'lucide-react';
+import { Cpu, Zap, Activity, ChevronDown, CheckCircle2, Clock, X } from 'lucide-react';
 
 export function WorkerStatus() {
   const dispatch = useAppDispatch();
@@ -18,6 +18,34 @@ export function WorkerStatus() {
   } = useAppSelector((state) => state.worker);
 
   const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Dismiss on click outside or Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePointerDownOutside = (e: MouseEvent | TouchEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDownOutside);
+    document.addEventListener('touchstart', handlePointerDownOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDownOutside);
+      document.removeEventListener('touchstart', handlePointerDownOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
 
   const isRendering = connectionStatus === 'RENDERING';
   const isIdle = nodeState === 'IDLE';
@@ -25,7 +53,7 @@ export function WorkerStatus() {
   const isPreempted = connectionStatus === 'PREEMPTED' || connectionStatus === 'PAUSED';
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       {/* Telemetry Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
@@ -88,6 +116,15 @@ export function WorkerStatus() {
         <ChevronDown className="w-3 h-3 opacity-60" />
       </button>
 
+      {/* Click-outside backdrop overlay to dismiss anywhere on the screen */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-transparent"
+          onClick={() => setIsOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Popover Details Modal */}
       {isOpen && (
         <div className="absolute right-0 top-9 w-88 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-2xl p-4 z-50 text-slate-800 dark:text-slate-200 text-xs animate-in fade-in zoom-in-95">
@@ -96,9 +133,18 @@ export function WorkerStatus() {
               <Cpu className="w-4 h-4 text-blue-500 dark:text-blue-400" />
               <span>Idle-PC Render Node</span>
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 font-mono">
-              Preemptive v1.0
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 font-mono">
+                Preemptive v1.0
+              </span>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Dismiss (Esc)"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* Local State & Activity Scoring Card */}
