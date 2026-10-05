@@ -3,6 +3,7 @@ import {
   deleteClip,
   duplicateClip,
   separateAudio,
+  setCanvasAspectRatio,
   setPlayhead,
   setSelectedClip,
   togglePlay,
@@ -14,6 +15,7 @@ import { getMediaUrl } from "@/lib/api";
 import { animationLabel, clipAnimations, findNextAbutting, findPrevAbutting, TRANSITIONS, transitionLabel } from "@/lib/motion";
 import type {
   AnimationCategory,
+  AspectRatioType,
   Asset,
   Clip,
   QrStyles,
@@ -59,6 +61,13 @@ export function PropertiesPanel() {
   const [modalCategory, setModalCategory] = useState<AnimationCategory>("enter");
   const slideFileRef = useRef<HTMLInputElement>(null);
   const [currentLayout, setCurrentLayout] = useState("2:1 Horizontal");
+
+  const currentAspectRatio: AspectRatioType = sceneGraph?.aspectRatio || "16:9";
+
+  const handleAspectRatioChange = (ratio: AspectRatioType) => {
+    dispatch(setCanvasAspectRatio(ratio));
+    dispatch(triggerAutosave());
+  };
 
   let selectedClip: Clip | null = null;
   let selectedTrackId = "";
@@ -388,10 +397,75 @@ export function PropertiesPanel() {
           </div>
 
           <div className="pt-4 space-y-4 text-xs">
-            <div className="space-y-1">
-              <span className="text-slate-500 font-medium">Aspect Ratio</span>
-              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 font-semibold text-slate-700 dark:text-slate-200">
-                16:9 Widescreen (960 x 540)
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Aspect Ratio</span>
+                <span className="text-[10px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-850 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-800">
+                  {sceneGraph?.resolution ? `${sceneGraph.resolution.w} × ${sceneGraph.resolution.h}` : "960 × 540"}
+                </span>
+              </div>
+
+              <CommonSelect
+                value={currentAspectRatio}
+                onValueChange={(val) => handleAspectRatioChange(val as AspectRatioType)}
+                options={[
+                  {
+                    value: "16:9",
+                    label: "16:9 • Widescreen (Landscape • 960×540)",
+                  },
+                  {
+                    value: "9:16",
+                    label: "9:16 • Portrait / Vertical (Reels / TikTok • 304×540)",
+                  },
+                  {
+                    value: "1:1",
+                    label: "1:1 • Square (Instagram / Post • 540×540)",
+                  },
+                  {
+                    value: "4:3",
+                    label: "4:3 • Standard (Classic / Tablet • 720×540)",
+                  },
+                  {
+                    value: "21:9",
+                    label: "21:9 • Ultrawide (Cinematic • 960×411)",
+                  },
+                ]}
+              />
+
+              {/* Quick Select Preset Buttons */}
+              <div className="grid grid-cols-5 gap-1.5 pt-1">
+                {[
+                  { id: "16:9" as AspectRatioType, name: "16:9", dims: "Landscape" },
+                  { id: "9:16" as AspectRatioType, name: "9:16", dims: "Portrait" },
+                  { id: "1:1" as AspectRatioType, name: "1:1", dims: "Square" },
+                  { id: "4:3" as AspectRatioType, name: "4:3", dims: "Classic" },
+                  { id: "21:9" as AspectRatioType, name: "21:9", dims: "Ultrawide" },
+                ].map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => handleAspectRatioChange(preset.id)}
+                    className={`flex flex-col items-center justify-center p-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                      currentAspectRatio === preset.id
+                        ? "border-sky-500 bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-300 font-bold shadow-xs"
+                        : "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-700"
+                    }`}
+                    title={`${preset.name} (${preset.dims})`}
+                  >
+                    <div
+                      className={`border rounded-xs mb-1 transition-colors ${
+                        currentAspectRatio === preset.id
+                          ? "border-sky-500 bg-sky-400/20"
+                          : "border-slate-400 dark:border-slate-600 bg-slate-200/50 dark:bg-slate-800"
+                      }`}
+                      style={{
+                        width: preset.id === "9:16" ? "8px" : preset.id === "21:9" ? "18px" : preset.id === "16:9" ? "16px" : preset.id === "4:3" ? "13px" : "11px",
+                        height: preset.id === "9:16" ? "16px" : preset.id === "21:9" ? "8px" : preset.id === "16:9" ? "9px" : preset.id === "4:3" ? "10px" : "11px",
+                      }}
+                    />
+                    <span className="text-[10px] leading-tight">{preset.name}</span>
+                    <span className="text-[8px] opacity-60 leading-tight scale-90">{preset.dims}</span>
+                  </button>
+                ))}
               </div>
             </div>
 

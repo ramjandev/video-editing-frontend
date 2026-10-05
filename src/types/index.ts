@@ -163,11 +163,14 @@ export interface Track {
   clips: Clip[];
 }
 
+export type AspectRatioType = "16:9" | "9:16" | "1:1" | "4:3" | "21:9";
+
 export interface SceneGraph {
   projectId: string;
   duration: number;
   fps: number;
   resolution: { w: number; h: number };
+  aspectRatio?: AspectRatioType;
   tracks: Track[];
   layoutId?: string | null;
 }

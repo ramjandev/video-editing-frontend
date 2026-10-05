@@ -33,6 +33,9 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
   const selectedClipId = useAppSelector((state) => state.editor.selectedClipId);
   const playhead = useAppSelector((state) => state.editor.playhead);
 
+  const canvasWidth = sceneGraph?.resolution?.w || 960;
+  const canvasHeight = sceneGraph?.resolution?.h || 540;
+
   const videoRefs = useRef<Map<string, HTMLMediaElement>>(new Map());
   const seekMapRef = useRef<Map<string, MediaSeekTracker>>(new Map());
   const frameCacheRef = useRef<Map<string, Map<number, HTMLCanvasElement | HTMLImageElement>>>(new Map());
@@ -585,8 +588,8 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
-        const cx = rect.left + ((480 + drag.initialX) / 960) * rect.width;
-        const cy = rect.top + ((270 + drag.initialY) / 540) * rect.height;
+        const cx = rect.left + (((canvasWidth / 2) + drag.initialX) / canvasWidth) * rect.width;
+        const cy = rect.top + (((canvasHeight / 2) + drag.initialY) / canvasHeight) * rect.height;
         const pointer = Math.atan2(e.clientX - cx, -(e.clientY - cy)) * (180 / Math.PI);
         const origin = Math.atan2(drag.mouseX - cx, -(drag.mouseY - cy)) * (180 / Math.PI);
         const rotation = Math.round((drag.initialRot + pointer - origin + 360) % 360);
@@ -703,8 +706,8 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
 
   // Calculate selected clip bounding box position on canvas
   const selTransform = selectedClip?.transform || {};
-  const selX = (selTransform.x ?? 0) + 480;
-  const selY = (selTransform.y ?? 0) + 270;
+  const selX = (selTransform.x ?? 0) + canvasWidth / 2;
+  const selY = (selTransform.y ?? 0) + canvasHeight / 2;
   const selScale = selTransform.scale ?? 1.0;
   const measured = selectedClip && isDesignElement(selectedClip) ? elementSize(selectedClip) : null;
   const selWidth = (measured?.width || selTransform.width || 320) * selScale;
@@ -744,14 +747,15 @@ export function Player({ zoomScale = 0.6, onOpenPreview }: PlayerProps) {
       >
         <canvas
           ref={canvasRef}
-          width={960}
-          height={540}
-          className="w-[960px] h-[540px] block"
+          width={canvasWidth}
+          height={canvasHeight}
+          style={{ width: `${canvasWidth}px`, height: `${canvasHeight}px` }}
+          className="block"
           onMouseDown={(event) => {
             if (!sceneGraph) return;
             const rect = event.currentTarget.getBoundingClientRect();
-            const x = ((event.clientX - rect.left) / rect.width) * 960;
-            const y = ((event.clientY - rect.top) / rect.height) * 540;
+            const x = ((event.clientX - rect.left) / rect.width) * canvasWidth;
+            const y = ((event.clientY - rect.top) / rect.height) * canvasHeight;
             const hit = [...getSortedActiveClips(sceneGraph, playhead)]
               .reverse()
               .find((clip) => isDesignElement(clip) && pointInElement(clip, x, y));

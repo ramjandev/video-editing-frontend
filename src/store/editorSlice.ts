@@ -1,5 +1,5 @@
 import { getLayoutCells } from "@/lib/layouts";
-import type { Asset, Clip, SceneGraph, Track, TransformProps } from "@/types";
+import type { Asset, AspectRatioType, Clip, SceneGraph, Track, TransformProps } from "@/types";
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import { mediaManager } from "@/services/mediaManager";
 
@@ -252,6 +252,43 @@ const editorSlice = createSlice({
       state.activeProjectId = action.payload.projectId;
       state.sceneGraph = action.payload.sceneGraph;
       recalculateDuration(state);
+    },
+    setCanvasAspectRatio: (
+      state,
+      action: PayloadAction<AspectRatioType>,
+    ) => {
+      if (!state.sceneGraph) return;
+      snapshotHistory(state);
+      state.sceneGraph.aspectRatio = action.payload;
+
+      let w = 960;
+      let h = 540;
+      switch (action.payload) {
+        case "16:9":
+          w = 960;
+          h = 540;
+          break;
+        case "9:16":
+          w = 304;
+          h = 540;
+          break;
+        case "1:1":
+          w = 540;
+          h = 540;
+          break;
+        case "4:3":
+          w = 720;
+          h = 540;
+          break;
+        case "21:9":
+          w = 960;
+          h = 411;
+          break;
+        default:
+          w = 960;
+          h = 540;
+      }
+      state.sceneGraph.resolution = { w, h };
     },
     setSelectedClip: (state, action: PayloadAction<string | null>) => {
       state.selectedClipId = action.payload;
@@ -908,6 +945,7 @@ export const {
   setExportUrl,
   setExportModePreference,
   applyLayout,
+  setCanvasAspectRatio,
   togglePlay,
   resetEditor,
 } = editorSlice.actions;
