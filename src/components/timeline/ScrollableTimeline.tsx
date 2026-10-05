@@ -35,6 +35,12 @@ interface Props {
     clip: Clip,
     trackId: string,
   ) => void;
+  handleClipResizeStart?: (
+    e: React.PointerEvent,
+    clip: Clip,
+    trackId: string,
+    edge: "left" | "right",
+  ) => void;
 }
 const ScrollableTimeline: React.FC<Props> = ({
   scrollContainerRef,
@@ -43,6 +49,7 @@ const ScrollableTimeline: React.FC<Props> = ({
   handlePlayHeadMouseDown,
   visualMinutes,
   handleClipMouseDown,
+  handleClipResizeStart,
 }) => {
   const { sceneGraph, selectedClipId, playhead } = useAppSelector(
     (state) => state.editor,
@@ -260,6 +267,19 @@ const ScrollableTimeline: React.FC<Props> = ({
                       width: `${(clip.endTime - clip.startTime) * pixelsPerSecond}px`,
                     }}
                   >
+                    {/* Left Trim Handle (Mouse / Trackpad / Touchscreen) */}
+                    {handleClipResizeStart && (
+                      <div
+                        onPointerDown={(e) =>
+                          handleClipResizeStart(e, clip, track.id, "left")
+                        }
+                        title="Drag left edge to adjust start time (Mouse / Touch)"
+                        className="absolute left-0 top-0 bottom-0 w-2.5 z-40 cursor-ew-resize hover:bg-sky-500/80 active:bg-sky-600 flex items-center justify-center group/triml touch-none select-none transition-colors"
+                      >
+                        <div className="w-0.5 h-3.5 bg-white/70 rounded-full group-hover/triml:bg-white" />
+                      </div>
+                    )}
+
                     {isAudio && (
                       <Volume2 className="w-3.5 h-3.5 mr-1.5 shrink-0 opacity-90" />
                     )}
@@ -338,6 +358,23 @@ const ScrollableTimeline: React.FC<Props> = ({
                       >
                         <Scissors className="w-3 h-3" />
                       </button>
+                    )}
+
+                    <span className="text-[9px] font-mono opacity-70 ml-1 shrink-0 select-none">
+                      {Math.max(0.1, clip.endTime - clip.startTime).toFixed(1)}s
+                    </span>
+
+                    {/* Right Trim Handle (Mouse / Trackpad / Touchscreen) */}
+                    {handleClipResizeStart && (
+                      <div
+                        onPointerDown={(e) =>
+                          handleClipResizeStart(e, clip, track.id, "right")
+                        }
+                        title="Drag right edge to adjust duration (Mouse / Touch)"
+                        className="absolute right-0 top-0 bottom-0 w-2.5 z-40 cursor-ew-resize hover:bg-sky-500/80 active:bg-sky-600 flex items-center justify-center group/trimr touch-none select-none transition-colors"
+                      >
+                        <div className="w-0.5 h-3.5 bg-white/70 rounded-full group-hover/trimr:bg-white" />
+                      </div>
                     )}
                   </div>
                   {nextClip && (

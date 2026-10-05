@@ -7,6 +7,7 @@ import {
   splitClip,
   togglePlay,
   undo,
+  updateClip,
 } from "@/store/editorSlice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { triggerAutosave } from "@/store/thunks";
@@ -16,6 +17,18 @@ import PlaybackHeader from "./timeline/PlaybackHeader";
 import ScrollableTimeline from "./timeline/ScrollableTimeline";
 
 const pixelsPerSecond = 200 / 60; // 200px per minute scale matching Figma
+
+export type ResizeEdge = "left" | "right";
+
+interface ResizeState {
+  clipId: string;
+  trackId: string;
+  edge: ResizeEdge;
+  startX: number;
+  originalStartTime: number;
+  originalEndTime: number;
+  clip: Clip;
+}
 
 export function Timeline() {
   const dispatch = useAppDispatch();
@@ -33,6 +46,8 @@ export function Timeline() {
     originalStartTime: number;
     originalTrackId: string;
   } | null>(null);
+
+  const [resizeState, setResizeState] = useState<ResizeState | null>(null);
 
   const handlePlayheadMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -241,6 +256,97 @@ export function Timeline() {
     };
   }, [dragState, dispatch, sceneGraph]);
 
+  // Edge resize pointer move handler (Mouse, Trackpad, Touchscreen)
+  useEffect(() => {
+    const handlePointerMove = (e: PointerEvent) => {
+      if (resizeState && sceneGraph) {
+        const deltaX = e.clientX - resizeState.startX;
+        const deltaSeconds = deltaX / pixelsPerSecond;
+
+        if (resizeState.edge === "right") {
+          const newEndTime = Math.max(
+            resizeState.originalStartTime + 0.2,
+            resizeState.originalEndTime + deltaSeconds,
+          );
+          const newDuration = newEndTime - resizeState.originalStartTime;
+          const updates: Partial<Clip> = {
+            endTime: newEndTime,
+            trimOut: newDuration,
+          };
+          if (
+            resizeState.clip.asset.type === "slider" &&
+            resizeState.clip.sliderStyles
+          ) {
+            const count = Math.max(
+              1,
+              resizeState.clip.sliderStyles.images?.length || 3,
+            );
+            updates.sliderStyles = {
+              ...resizeState.clip.sliderStyles,
+              slideDuration: Math.max(0.5, +(newDuration / count).toFixed(2)),
+            };
+          }
+          dispatch(
+            updateClip({
+              trackId: resizeState.trackId,
+              clipId: resizeState.clipId,
+              updates,
+            }),
+          );
+        } else {
+          // Left edge
+          const newStartTime = Math.min(
+            resizeState.originalEndTime - 0.2,
+            Math.max(0, resizeState.originalStartTime + deltaSeconds),
+          );
+          const newDuration = resizeState.originalEndTime - newStartTime;
+          const updates: Partial<Clip> = {
+            startTime: newStartTime,
+            trimIn:
+              (resizeState.clip.trimIn || 0) +
+              (newStartTime - resizeState.originalStartTime),
+          };
+          if (
+            resizeState.clip.asset.type === "slider" &&
+            resizeState.clip.sliderStyles
+          ) {
+            const count = Math.max(
+              1,
+              resizeState.clip.sliderStyles.images?.length || 3,
+            );
+            updates.sliderStyles = {
+              ...resizeState.clip.sliderStyles,
+              slideDuration: Math.max(0.5, +(newDuration / count).toFixed(2)),
+            };
+          }
+          dispatch(
+            updateClip({
+              trackId: resizeState.trackId,
+              clipId: resizeState.clipId,
+              updates,
+            }),
+          );
+        }
+      }
+    };
+
+    const handlePointerUp = () => {
+      if (resizeState) {
+        setResizeState(null);
+        dispatch(triggerAutosave());
+      }
+    };
+
+    if (resizeState) {
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp);
+    }
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [resizeState, dispatch, sceneGraph]);
+
   if (!sceneGraph)
     return (
       <div className="h-full bg-white dark:bg-slate-900 p-4 text-slate-400">
@@ -270,6 +376,25 @@ export function Timeline() {
     });
   };
 
+  const handleClipResizeStart = (
+    e: React.PointerEvent,
+    clip: Clip,
+    trackId: string,
+    edge: ResizeEdge,
+  ) => {
+    e.stopPropagation();
+    dispatch(setSelectedClip(clip.id));
+    setResizeState({
+      clipId: clip.id,
+      trackId,
+      edge,
+      startX: e.clientX,
+      originalStartTime: clip.startTime,
+      originalEndTime: clip.endTime,
+      clip,
+    });
+  };
+
   return (
     <div
       className="flex flex-col h-full bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 select-none overflow-hidden"
@@ -284,6 +409,7 @@ export function Timeline() {
         handlePlayHeadMouseDown={handlePlayheadMouseDown}
         visualMinutes={visualMinutes}
         handleClipMouseDown={handleClipMouseDown}
+        handleClipResizeStart={handleClipResizeStart}
       />
     </div>
   );

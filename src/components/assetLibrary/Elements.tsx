@@ -5,10 +5,13 @@ import {
   SlidersHorizontal,
   Square,
   Star as StarIcon,
+  Subtitles,
   Triangle,
   Type as TypeIcon,
 } from "lucide-react";
-import React from "react";
+import React, { useState } from "react";
+import TranscriptionModal from "./TranscriptionModal";
+
 interface ElementsProps {
   handleAddText: () => void;
   handleAddQR: () => void;
@@ -21,6 +24,8 @@ const Elements: React.FC<ElementsProps> = ({
   handleAddSlider,
   handleAddShape,
 }) => {
+  const [isTranscriptionOpen, setIsTranscriptionOpen] = useState(false);
+
   return (
     <div className="flex flex-col h-full p-4">
       <h2 className="font-bold text-base text-slate-900 dark:text-white tracking-tight mb-4">
@@ -106,7 +111,23 @@ const Elements: React.FC<ElementsProps> = ({
             Line
           </span>
         </button>
+
+        <button
+          onClick={() => setIsTranscriptionOpen(true)}
+          className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:border-purple-400 hover:bg-purple-500/5 transition-all cursor-pointer group"
+          title="Transcribe Audio/Video and generate captions"
+        >
+          <Subtitles className="w-5 h-5 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform mb-1" />
+          <span className="text-[10px] text-slate-700 dark:text-slate-200 font-medium">
+            Transcription
+          </span>
+        </button>
       </div>
+
+      <TranscriptionModal
+        isOpen={isTranscriptionOpen}
+        onClose={() => setIsTranscriptionOpen(false)}
+      />
     </div>
   );
 };

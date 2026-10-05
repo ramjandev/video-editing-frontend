@@ -262,6 +262,7 @@ const editorSlice = createSlice({
         asset: Asset;
         trackId?: string;
         startTime?: number;
+        duration?: number;
       }>,
     ) => {
       if (!state.sceneGraph) return;
@@ -286,9 +287,9 @@ const editorSlice = createSlice({
             .filter((url): url is string => !!url)
         : [];
       const slideDuration = 2.5;
-      const clipDuration = isSlider
+      const clipDuration = action.payload.duration ?? (isSlider
         ? Math.max(asset.duration || 5, Math.max(sliderImages.length, 3) * slideDuration)
-        : asset.duration || 5;
+        : asset.duration || 5);
       const shapeSize = isLine
         ? { width: 320, height: 8 }
         : asset.content === "Rectangle"
