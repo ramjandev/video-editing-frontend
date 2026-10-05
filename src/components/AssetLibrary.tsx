@@ -2,7 +2,7 @@ import { mediaManager } from "@/services/mediaManager";
 import { addAssetToTimeline, addOptimisticAsset } from "@/store/editorSlice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { deleteAsset, triggerAutosave, uploadAsset } from "@/store/thunks";
-import { addToast } from "@/store/uiSlice";
+import { addToast, setTranscriptionModalOpen } from "@/store/uiSlice";
 import type { Asset } from "@/types";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import React, { useRef, useState } from "react";
@@ -11,8 +11,10 @@ import DeleteWarning from "./assetLibrary/DeleteWarning";
 import Elements from "./assetLibrary/Elements";
 import LeftVertical from "./assetLibrary/LeftVertical";
 import Live from "./assetLibrary/Live";
+import TranscriptionPanel from "./assetLibrary/TranscriptionPanel";
+import TranscriptionModal from "./assetLibrary/TranscriptionModal";
 import UploadSection from "./assetLibrary/UploadSection";
-export type ActiveRailTab = "upload" | "elements" | "live";
+export type ActiveRailTab = "upload" | "elements" | "transcription" | "live";
 export type ActiveFilterTab = "All" | "Image" | "Video" | "Audio" | "Exports";
 export interface AssetLibraryProps {
   activeRailTab?: ActiveRailTab;
@@ -25,6 +27,8 @@ const AssetLibrary: React.FC<AssetLibraryProps> = ({
 }) => {
   const dispatch = useAppDispatch();
   const { assets, uploadingAssets } = useAppSelector((state) => state.editor);
+  const { isTranscriptionModalOpen, transcriptionSourceMediaId } =
+    useAppSelector((state) => state.ui);
 
   const activeUploadsList = Object.values(uploadingAssets);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -43,6 +47,16 @@ const AssetLibrary: React.FC<AssetLibraryProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [assetToDelete, setAssetToDelete] = useState<Asset | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedMediaForTranscription, setSelectedMediaForTranscription] =
+    useState<string | null>(null);
+
+  const effectiveMediaForTranscription =
+    selectedMediaForTranscription || transcriptionSourceMediaId;
+
+  const handleTranscribeMedia = (asset: Asset) => {
+    setSelectedMediaForTranscription(asset._id);
+    handleRailClick("transcription");
+  };
 
   const handleRailUploadClick = () => {
     setInternalRailTab("upload");
@@ -283,6 +297,7 @@ const AssetLibrary: React.FC<AssetLibraryProps> = ({
               filteredAssets={filteredAssets}
               handleAddToTimeline={handleAddToTimeline}
               handleDeleteClick={handleDeleteClick}
+              onTranscribeMedia={handleTranscribeMedia}
             />
           )}
 
@@ -295,9 +310,21 @@ const AssetLibrary: React.FC<AssetLibraryProps> = ({
             />
           )}
 
+          {activeRailTab === "transcription" && (
+            <TranscriptionPanel
+              initialMediaId={effectiveMediaForTranscription}
+              onOpenModal={() => dispatch(setTranscriptionModalOpen(true))}
+            />
+          )}
+
           {activeRailTab === "live" && <Live />}
         </div>
       </div>
+
+      <TranscriptionModal
+        isOpen={isTranscriptionModalOpen}
+        onClose={() => dispatch(setTranscriptionModalOpen(false))}
+      />
 
       {assetToDelete &&
         typeof document !== "undefined" &&

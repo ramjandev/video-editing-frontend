@@ -11,11 +11,13 @@ import {
 } from "@/store/editorSlice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { triggerAutosave } from "@/store/thunks";
+import { openTranscriptionForMedia } from "@/store/uiSlice";
 import type { Clip } from "@/types";
 import {
   Home,
   Plus,
   Scissors,
+  Subtitles,
   Trash2,
   Type,
   Video,
@@ -222,6 +224,7 @@ const ScrollableTimeline: React.FC<Props> = ({
               {track.clips.map((clip) => {
                 const isSelected = selectedClipId === clip.id;
                 const isAudio = clip.asset.type === "audio";
+                const isVideo = clip.asset.type === "video";
                 const isText = clip.asset.type === "text";
                 const nextClip = isAudio
                   ? undefined
@@ -341,23 +344,37 @@ const ScrollableTimeline: React.FC<Props> = ({
                       </span>
                     )}
                     {isSelected && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          dispatch(
-                            splitClip({
-                              trackId: track.id,
-                              clipId: clip.id,
-                              splitAtTime: playhead,
-                            }),
-                          );
-                          dispatch(triggerAutosave());
-                        }}
-                        title="Split clip at playhead"
-                        className="ml-1 p-1 rounded hover:bg-black/20 dark:hover:bg-white/20 text-current shrink-0 cursor-pointer"
-                      >
-                        <Scissors className="w-3 h-3" />
-                      </button>
+                      <div className="flex items-center gap-0.5 ml-1 shrink-0">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            dispatch(
+                              splitClip({
+                                trackId: track.id,
+                                clipId: clip.id,
+                                splitAtTime: playhead,
+                              }),
+                            );
+                            dispatch(triggerAutosave());
+                          }}
+                          title="Split clip at playhead"
+                          className="p-1 rounded hover:bg-black/20 dark:hover:bg-white/20 text-current cursor-pointer"
+                        >
+                          <Scissors className="w-3 h-3" />
+                        </button>
+                        {(isAudio || isVideo) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              dispatch(openTranscriptionForMedia(clip.id));
+                            }}
+                            title="Transcribe spoken audio into captions"
+                            className="p-1 rounded hover:bg-purple-500/30 text-purple-200 hover:text-white cursor-pointer"
+                          >
+                            <Subtitles className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     )}
 
                     <span className="text-[9px] font-mono opacity-70 ml-1 shrink-0 select-none">

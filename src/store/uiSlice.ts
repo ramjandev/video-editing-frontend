@@ -12,12 +12,16 @@ interface UiState {
   toasts: Toast[];
   isProjectManagerOpen: boolean;
   isAdminPanelOpen: boolean;
+  isTranscriptionModalOpen: boolean;
+  transcriptionSourceMediaId: string | null;
 }
 
 const initialState: UiState = {
   toasts: [],
   isProjectManagerOpen: false,
   isAdminPanelOpen: false,
+  isTranscriptionModalOpen: false,
+  transcriptionSourceMediaId: null,
 };
 
 const uiSlice = createSlice({
@@ -45,6 +49,13 @@ const uiSlice = createSlice({
     setAdminPanelOpen: (state, action: PayloadAction<boolean>) => {
       state.isAdminPanelOpen = action.payload;
     },
+    setTranscriptionModalOpen: (state, action: PayloadAction<boolean>) => {
+      state.isTranscriptionModalOpen = action.payload;
+    },
+    openTranscriptionForMedia: (state, action: PayloadAction<string | null>) => {
+      state.transcriptionSourceMediaId = action.payload;
+      state.isTranscriptionModalOpen = true;
+    },
   },
 });
 
@@ -56,5 +67,7 @@ export const {
   setProjectManagerOpen,
   toggleAdminPanel,
   setAdminPanelOpen,
+  setTranscriptionModalOpen,
+  openTranscriptionForMedia,
 } = uiSlice.actions;
 export default uiSlice.reducer;

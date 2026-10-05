@@ -13,6 +13,7 @@ import {
   Loader2,
   Play,
   Search,
+  Subtitles,
   Trash2,
   Upload as UploadIcon,
 } from "lucide-react";
@@ -28,6 +29,7 @@ interface UploadSectionProps {
   filteredAssets: Asset[];
   handleAddToTimeline: (asset: Asset) => void;
   handleDeleteClick: (e: React.MouseEvent, asset: Asset) => void;
+  onTranscribeMedia?: (asset: Asset) => void;
 }
 const UploadSection: React.FC<UploadSectionProps> = ({
   fileInputRef,
@@ -40,6 +42,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({
   filteredAssets,
   handleAddToTimeline,
   handleDeleteClick,
+  onTranscribeMedia,
 }) => {
   const dispatch = useAppDispatch();
   const { uploadingAssets } = useAppSelector((state) => state.editor);
@@ -184,8 +187,20 @@ const UploadSection: React.FC<UploadSectionProps> = ({
               onClick={() => handleAddToTimeline(asset)}
               className="group relative bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-xl overflow-hidden cursor-grab active:cursor-grabbing hover:shadow-md hover:border-sky-400 transition-all flex flex-col items-center h-auto self-start"
             >
-              {/* Top Action Buttons: Download & Delete */}
+              {/* Top Action Buttons: Download, Transcribe & Delete */}
               <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-30 opacity-0 group-hover:opacity-100 transition-opacity">
+                {(asset.type === "video" || asset.type === "audio") && onTranscribeMedia && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTranscribeMedia(asset);
+                    }}
+                    className="bg-purple-600/90 text-white p-1 rounded-md hover:bg-purple-500 shadow-xs cursor-pointer transition-colors"
+                    title="Transcribe to Text / Captions"
+                  >
+                    <Subtitles className="w-3 h-3" />
+                  </button>
+                )}
                 {canDownload && !isExport && (
                   <button
                     onClick={async (e) => {

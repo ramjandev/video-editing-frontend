@@ -1,4 +1,4 @@
-import { Layers, Radio, Upload as UploadIcon } from "lucide-react";
+import { Layers, Radio, Subtitles, Upload as UploadIcon } from "lucide-react";
 import type { ActiveRailTab } from "../AssetLibrary";
 interface Props {
   handleRailClick: (tab: ActiveRailTab) => void;
@@ -50,6 +50,27 @@ const LeftVertical: React.FC<Props> = ({
           <Layers className="w-5 h-5" />
         </div>
         <span className="text-[10px]">Elements</span>
+      </button>
+
+      <button
+        onClick={() => handleRailClick("transcription")}
+        className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+          activeRailTab === "transcription"
+            ? "text-purple-600 dark:text-purple-400 font-semibold"
+            : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+        }`}
+        title="Audio & Video Transcription"
+      >
+        <div
+          className={`p-2.5 rounded-xl ${
+            activeRailTab === "transcription"
+              ? "bg-purple-50 dark:bg-purple-950/50 border border-purple-500/30"
+              : ""
+          }`}
+        >
+          <Subtitles className="w-5 h-5" />
+        </div>
+        <span className="text-[9px] tracking-tight">Transcribe</span>
       </button>
 
       <button

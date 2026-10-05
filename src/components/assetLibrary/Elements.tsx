@@ -9,8 +9,9 @@ import {
   Triangle,
   Type as TypeIcon,
 } from "lucide-react";
-import React, { useState } from "react";
-import TranscriptionModal from "./TranscriptionModal";
+import React from "react";
+import { useAppDispatch } from "@/store/hooks";
+import { setTranscriptionModalOpen } from "@/store/uiSlice";
 
 interface ElementsProps {
   handleAddText: () => void;
@@ -24,7 +25,7 @@ const Elements: React.FC<ElementsProps> = ({
   handleAddSlider,
   handleAddShape,
 }) => {
-  const [isTranscriptionOpen, setIsTranscriptionOpen] = useState(false);
+  const dispatch = useAppDispatch();
 
   return (
     <div className="flex flex-col h-full p-4">
@@ -113,7 +114,7 @@ const Elements: React.FC<ElementsProps> = ({
         </button>
 
         <button
-          onClick={() => setIsTranscriptionOpen(true)}
+          onClick={() => dispatch(setTranscriptionModalOpen(true))}
           className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:border-purple-400 hover:bg-purple-500/5 transition-all cursor-pointer group"
           title="Transcribe Audio/Video and generate captions"
         >
@@ -123,11 +124,6 @@ const Elements: React.FC<ElementsProps> = ({
           </span>
         </button>
       </div>
-
-      <TranscriptionModal
-        isOpen={isTranscriptionOpen}
-        onClose={() => setIsTranscriptionOpen(false)}
-      />
     </div>
   );
 };

@@ -31,6 +31,7 @@ interface Props {
 export const TranscriptionModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const dispatch = useAppDispatch();
   const { sceneGraph, assets } = useAppSelector((state) => state.editor);
+  const { transcriptionSourceMediaId } = useAppSelector((state) => state.ui);
 
   // Available audio/video sources from sceneGraph and assets
   const mediaSources = React.useMemo(() => {
@@ -98,10 +99,12 @@ export const TranscriptionModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
-    if (mediaSources.length > 0 && !selectedMediaId) {
+    if (transcriptionSourceMediaId) {
+      setSelectedMediaId(transcriptionSourceMediaId);
+    } else if (mediaSources.length > 0 && !selectedMediaId) {
       setSelectedMediaId(mediaSources[0].id);
     }
-  }, [mediaSources, selectedMediaId]);
+  }, [transcriptionSourceMediaId, mediaSources, selectedMediaId]);
 
   // Speech recognition setup (Web Speech API)
   const toggleRecording = () => {
