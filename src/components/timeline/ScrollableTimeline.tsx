@@ -309,21 +309,21 @@ const ScrollableTimeline: React.FC<Props> = ({
                     </span>
                     {enterAnimation && (
                       <div
-                        title={`${enterAnimation.label} · ${slots.enter?.duration ?? 0.6}s`}
+                        title={`In Transition: ${enterAnimation.label} · ${slots.enter?.duration ?? 0.6}s`}
                         className="absolute inset-y-0 left-0 rounded-l-xl bg-gradient-to-r from-sky-400/55 to-sky-400/0 pointer-events-none"
                         style={{ width: enterWidth }}
                       />
                     )}
                     {exitAnimation && (
                       <div
-                        title={`${exitAnimation.label} · ${slots.exit?.duration ?? 0.6}s`}
+                        title={`Out Transition: ${exitAnimation.label} · ${slots.exit?.duration ?? 0.6}s`}
                         className="absolute inset-y-0 right-0 rounded-r-xl bg-gradient-to-l from-violet-400/60 to-violet-400/0 pointer-events-none"
                         style={{ width: exitWidth }}
                       />
                     )}
                     {emphasisAnimation && (
                       <div
-                        title={`${emphasisAnimation.label} · ${slots.emphasis?.duration ?? 0.6}s`}
+                        title={`Emphasis Transition: ${emphasisAnimation.label} · ${slots.emphasis?.duration ?? 0.6}s`}
                         className="absolute inset-y-0 rounded-md bg-sky-400/45 pointer-events-none"
                         style={{ width: emphasisWidth, left: `calc(50% - ${emphasisWidth / 2}px)` }}
                       />
