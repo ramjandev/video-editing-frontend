@@ -44,6 +44,7 @@ import {
   Volume2,
 } from "lucide-react";
 import { useRef, useState } from "react";
+import CommonSelect from "./shared/CommonSelect";
 import { AnimationModal } from "./AnimationModal";
 import { SelectLayoutModal } from "./SelectLayoutModal";
 
@@ -594,39 +595,39 @@ export function PropertiesPanel() {
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Font Family
                   </label>
-                  <select
+                  <CommonSelect
                     value={textStyles.fontFamily || "Inter"}
-                    onChange={(e) =>
-                      handleUpdateTextStyles({ fontFamily: e.target.value })
+                    onValueChange={(val) =>
+                      handleUpdateTextStyles({ fontFamily: val })
                     }
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
-                  >
-                    <option value="Inter">Inter</option>
-                    <option value="Roboto">Roboto</option>
-                    <option value="Poppins">Poppins</option>
-                    <option value="Arial">Arial</option>
-                    <option value="Impact">Impact</option>
-                    <option value="Georgia">Georgia</option>
-                    <option value="Courier New">Courier New</option>
-                  </select>
+                    options={[
+                      { value: "Inter", label: "Inter" },
+                      { value: "Roboto", label: "Roboto" },
+                      { value: "Poppins", label: "Poppins" },
+                      { value: "Arial", label: "Arial" },
+                      { value: "Impact", label: "Impact" },
+                      { value: "Georgia", label: "Georgia" },
+                      { value: "Courier New", label: "Courier New" },
+                    ]}
+                  />
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Font Weight
                   </label>
-                  <select
+                  <CommonSelect
                     value={textStyles.fontWeight || "Bold"}
-                    onChange={(e) =>
-                      handleUpdateTextStyles({ fontWeight: e.target.value })
+                    onValueChange={(val) =>
+                      handleUpdateTextStyles({ fontWeight: val })
                     }
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
-                  >
-                    <option value="Normal">Normal</option>
-                    <option value="Medium">Medium</option>
-                    <option value="SemiBold">SemiBold</option>
-                    <option value="Bold">Bold</option>
-                  </select>
+                    options={[
+                      { value: "Normal", label: "Normal" },
+                      { value: "Medium", label: "Medium" },
+                      { value: "SemiBold", label: "SemiBold" },
+                      { value: "Bold", label: "Bold" },
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -767,25 +768,25 @@ export function PropertiesPanel() {
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   Shape Type
                 </label>
-                <select
+                <CommonSelect
                   value={
                     shapeStyles.shapeType ||
                     (selectedClip.asset?.content as any) ||
                     "Rectangle"
                   }
-                  onChange={(e) =>
+                  onValueChange={(val) =>
                     handleUpdateShapeStyles({
-                      shapeType: e.target.value as any,
+                      shapeType: val as any,
                     })
                   }
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
-                >
-                  <option value="Rectangle">Rectangle</option>
-                  <option value="Ellipses">Ellipse / Circle</option>
-                  <option value="Triangle">Triangle</option>
-                  <option value="Star">Star</option>
-                  <option value="Line">Line</option>
-                </select>
+                  options={[
+                    { value: "Rectangle", label: "Rectangle" },
+                    { value: "Ellipses", label: "Ellipse / Circle" },
+                    { value: "Triangle", label: "Triangle" },
+                    { value: "Star", label: "Star" },
+                    { value: "Line", label: "Line" },
+                  ]}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -898,20 +899,20 @@ export function PropertiesPanel() {
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   Slide Transition
                 </label>
-                <select
+                <CommonSelect
                   value={sliderStyles.transition || "fade"}
-                  onChange={(e) =>
+                  onValueChange={(val) =>
                     handleUpdateSliderStyles({
-                      transition: e.target.value as any,
+                      transition: val as any,
                     })
                   }
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
-                >
-                  <option value="fade">Cross Fade</option>
-                  <option value="left">Slide Left</option>
-                  <option value="right">Slide Right</option>
-                  <option value="zoom">Zoom</option>
-                </select>
+                  options={[
+                    { value: "fade", label: "Cross Fade" },
+                    { value: "left", label: "Slide Left" },
+                    { value: "right", label: "Slide Right" },
+                    { value: "zoom", label: "Zoom" },
+                  ]}
+                />
               </div>
 
               <div className="space-y-1.5">
@@ -1000,24 +1001,21 @@ export function PropertiesPanel() {
                   ))}
                 </div>
                 {imageAssets.length > 0 && (
-                  <select
+                  <CommonSelect
                     value=""
-                    onChange={(event) => {
-                      if (!event.target.value || !selectedClip) return;
+                    placeholder="Add from library"
+                    onValueChange={(val) => {
+                      if (!val || !selectedClip) return;
                       handleUpdateSliderStyles({
-                        images: [...(sliderStyles.images || []), event.target.value],
+                        images: [...(sliderStyles.images || []), val],
                       });
                       playSliderFrom(selectedClip.startTime);
                     }}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
-                  >
-                    <option value="">Add from library</option>
-                    {imageAssets.map((asset) => (
-                      <option key={asset._id} value={asset.original_url || asset.preview_url}>
-                        {asset.public_id || "Image"}
-                      </option>
-                    ))}
-                  </select>
+                    options={imageAssets.map((asset) => ({
+                      value: asset.original_url || asset.preview_url || asset._id,
+                      label: asset.public_id || "Image",
+                    }))}
+                  />
                 )}
               </div>
             </div>

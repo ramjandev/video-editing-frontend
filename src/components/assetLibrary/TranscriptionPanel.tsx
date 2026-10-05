@@ -4,6 +4,7 @@ import { addAssetToTimeline } from "@/store/editorSlice";
 import { triggerAutosave } from "@/store/thunks";
 import { addToast } from "@/store/uiSlice";
 import type { Asset } from "@/types";
+import CommonSelect from "../shared/CommonSelect";
 import {
   Subtitles,
   Mic,
@@ -462,18 +463,14 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
             Media Source
           </label>
           {mediaSources.length > 0 ? (
-            <select
+            <CommonSelect
               value={selectedMediaId}
-              onChange={(e) => setSelectedMediaId(e.target.value)}
-              className="w-full text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-purple-500"
-            >
-              {mediaSources.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.type === "video" ? "📹 " : "🎵 "}
-                  {m.name} ({m.duration.toFixed(1)}s)
-                </option>
-              ))}
-            </select>
+              onValueChange={setSelectedMediaId}
+              options={mediaSources.map((m) => ({
+                value: m.id,
+                label: `${m.type === "video" ? "📹 " : "🎵 "} ${m.name} (${m.duration.toFixed(1)}s)`,
+              }))}
+            />
           ) : (
             <div className="text-[11px] p-2 bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 rounded-lg border border-amber-200/50">
               No audio or video found. Upload media or use live microphone dictation below.
@@ -487,17 +484,17 @@ export const TranscriptionPanel: React.FC<TranscriptionPanelProps> = ({
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">
               Language
             </label>
-            <select
+            <CommonSelect
               value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              className="w-full text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-1.5 text-slate-800 dark:text-slate-200"
-            >
-              <option value="en-US">English (US)</option>
-              <option value="en-GB">English (UK)</option>
-              <option value="es-ES">Spanish</option>
-              <option value="fr-FR">French</option>
-              <option value="de-DE">German</option>
-            </select>
+              onValueChange={setLanguage}
+              options={[
+                { value: "en-US", label: "English (US)" },
+                { value: "en-GB", label: "English (UK)" },
+                { value: "es-ES", label: "Spanish" },
+                { value: "fr-FR", label: "French" },
+                { value: "de-DE", label: "German" },
+              ]}
+            />
           </div>
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">

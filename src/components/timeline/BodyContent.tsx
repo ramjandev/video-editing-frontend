@@ -4,6 +4,7 @@ import { addToast } from "@/store/uiSlice";
 import type { AdminUser, PlatformStats, UserRole } from "@/types";
 import { Film, Folder, Shield, Trash2, Users } from "lucide-react";
 import React from "react";
+import CommonSelect from "../shared/CommonSelect";
 export type ActiveTab = "users" | "stats";
 interface BodyContentProps {
   activeTab: ActiveTab;
@@ -207,19 +208,17 @@ const BodyContent: React.FC<BodyContentProps> = ({
                         <td className="px-4 py-3 font-mono">{u.assetCount}</td>
                         <td className="px-4 py-3">
                           {isAdminOrSuperAdmin && !isSelf ? (
-                            <select
+                            <CommonSelect
                               value={displayRole}
-                              onChange={(e) =>
-                                handleRoleChange(
-                                  u._id,
-                                  e.target.value as UserRole,
-                                )
+                              onValueChange={(val) =>
+                                handleRoleChange(u._id, val as UserRole)
                               }
-                              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white rounded px-2.5 py-1 focus:outline-none focus:border-purple-500 cursor-pointer"
-                            >
-                              <option value="USER">USER</option>
-                              <option value="ADMIN">ADMIN</option>
-                            </select>
+                              options={[
+                                { value: "USER", label: "USER" },
+                                { value: "ADMIN", label: "ADMIN" },
+                              ]}
+                              className="w-24 h-7 text-xs py-1"
+                            />
                           ) : (
                             <span
                               className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${

@@ -4,6 +4,7 @@ import { addAssetToTimeline } from '@/store/editorSlice';
 import { triggerAutosave } from '@/store/thunks';
 import { addToast } from '@/store/uiSlice';
 import type { Asset } from '@/types';
+import CommonSelect from '../shared/CommonSelect';
 import {
   Subtitles,
   Mic,
@@ -320,17 +321,14 @@ export const TranscriptionModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 Target Audio / Video Media Source:
               </label>
               {mediaSources.length > 0 ? (
-                <select
+                <CommonSelect
                   value={selectedMediaId}
-                  onChange={(e) => setSelectedMediaId(e.target.value)}
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs rounded-lg px-3 py-2 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-purple-500"
-                >
-                  {mediaSources.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.type === 'audio' ? '🎵' : '🎬'} {item.name} ({item.duration.toFixed(1)}s)
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={setSelectedMediaId}
+                  options={mediaSources.map((item) => ({
+                    value: item.id,
+                    label: `${item.type === 'audio' ? '🎵' : '🎬'} ${item.name} (${item.duration.toFixed(1)}s)`,
+                  }))}
+                />
               ) : (
                 <div className="text-xs text-slate-400 italic">
                   No audio or video clips on timeline yet. Using project audio channel.
