@@ -58,37 +58,59 @@ export const AnimationModal: React.FC<AnimationModalProps> = ({
 
   const items = ANIMATIONS.filter((item) => item.category === activeTab);
 
+  const TABS: { key: AnimationCategory; label: string }[] = [
+    { key: "enter", label: "In (Enter)" },
+    { key: "emphasis", label: "Emphasis" },
+    { key: "exit", label: "Out (Exit)" },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-16">
       <div className="w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-full border border-slate-200 dark:border-slate-700/60 text-xs font-medium w-full max-w-md">
-            {(["enter", "emphasis", "exit"] as AnimationCategory[]).map((tab) => (
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-sky-50 dark:bg-sky-950/50 text-sky-500">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Transitions
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Choose in, emphasis, and out transitions for this clip
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="mb-5">
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-full border border-slate-200 dark:border-slate-700/60 text-xs font-medium w-full">
+            {TABS.map(({ key: tab, label }) => (
               <button
                 key={tab}
                 onClick={() => {
                   setActiveTab(tab);
                   setAnimDuration(durations?.[tab] ?? 0.6);
                 }}
-                className={`flex-1 py-2 px-4 rounded-full transition-all cursor-pointer capitalize ${
+                className={`flex-1 py-2 px-4 rounded-full transition-all cursor-pointer ${
                   activeTab === tab
                     ? "bg-white dark:bg-slate-900 text-sky-500 font-semibold shadow-sm border border-slate-200 dark:border-slate-700"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                 }`}
               >
-                {tab}
+                {label}
                 {selected?.[tab] ? (
                   <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-sky-500 align-middle" />
                 ) : null}
               </button>
             ))}
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ml-4 cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         <div className="grid grid-cols-4 gap-4">
