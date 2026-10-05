@@ -6,8 +6,9 @@ export type ActiveTab = "users" | "stats";
 interface Props {
   loading: boolean;
   fetchData: () => void;
+  isLiveConnected?: boolean;
 }
-const AdminHeader: React.FC<Props> = ({ loading, fetchData }) => {
+const AdminHeader: React.FC<Props> = ({ loading, fetchData, isLiveConnected }) => {
   const dispatch = useAppDispatch();
 
   return (
@@ -32,11 +33,19 @@ const AdminHeader: React.FC<Props> = ({ loading, fetchData }) => {
       </div>
 
       <div className="flex items-center gap-3">
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 select-none"
+          title={isLiveConnected ? "Real-time WebSocket & 8s auto-sync active" : "Auto-sync polling active (every 8s)"}
+        >
+          <span className={`w-2 h-2 rounded-full ${isLiveConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-400"}`} />
+          <span>{isLiveConnected ? "Live Sync" : "Auto Sync"}</span>
+        </div>
+
         <button
           onClick={fetchData}
           disabled={loading}
           className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
-          title="Refresh"
+          title="Refresh now"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
         </button>

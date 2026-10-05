@@ -3,49 +3,27 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { addToast } from "@/store/uiSlice";
 import type { AdminUser, PlatformStats, UserRole } from "@/types";
 import { Film, Folder, Shield, Trash2, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import React from "react";
 export type ActiveTab = "users" | "stats";
 interface BodyContentProps {
   activeTab: ActiveTab;
+  stats: PlatformStats | null;
+  users: AdminUser[];
+  loading: boolean;
+  fetchData: () => Promise<void>;
 }
-const BodyContent: React.FC<BodyContentProps> = ({ activeTab }) => {
+const BodyContent: React.FC<BodyContentProps> = ({
+  activeTab,
+  stats,
+  users,
+  loading,
+  fetchData,
+}) => {
   const dispatch = useAppDispatch();
-  const isOpen = useAppSelector((s) => s.ui.isAdminPanelOpen);
   const currentUser = useAppSelector((s) => s.auth.user);
-
-  const [stats, setStats] = useState<PlatformStats | null>(null);
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [loading, setLoading] = useState(false);
 
   const isAdminOrSuperAdmin =
     currentUser?.role === "ADMIN" || currentUser?.role === "SUPER_ADMIN";
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchData();
-    }
-  }, [isOpen]);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const [statsRes, usersRes] = await Promise.all([
-        api.get<PlatformStats>("/admin/stats"),
-        api.get<AdminUser[]>("/admin/users"),
-      ]);
-      setStats(statsRes.data);
-      setUsers(usersRes.data);
-    } catch (err: any) {
-      dispatch(
-        addToast({
-          type: "error",
-          message: err?.response?.data?.message || "Failed to load admin data",
-        }),
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const totalAdminsCount =
     (stats?.roleCounts?.ADMIN || 0) + (stats?.roleCounts?.SUPER_ADMIN || 0);
@@ -157,6 +135,12 @@ const BodyContent: React.FC<BodyContentProps> = ({ activeTab }) => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === "stats" && !stats && loading && (
+        <div className="text-center py-12 text-slate-500 text-xs">
+          Loading platform metrics...
         </div>
       )}
 
