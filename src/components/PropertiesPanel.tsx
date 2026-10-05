@@ -1199,19 +1199,25 @@ export function PropertiesPanel() {
             </div>
           )}
 
-          {/* F. ANIMATION PICKER */}
+          {/* F. TRANSITIONS PICKER */}
           {clipType !== "audio" && (
             <div className="space-y-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
               <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-sky-500" /> Animations
+                <Sparkles className="w-3.5 h-3.5 text-sky-500" /> Transitions
               </span>
-              {(["enter", "emphasis", "exit"] as const).map((category) => {
+              {(
+                [
+                  { key: "enter", label: "In (Enter)" },
+                  { key: "emphasis", label: "Emphasis" },
+                  { key: "exit", label: "Out (Exit)" },
+                ] as const
+              ).map(({ key: category, label }) => {
                 const slot = animationSlots[category];
                 return (
                   <div key={category} className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-600 dark:text-slate-300 capitalize">
-                        {category}
+                      <span className="text-[11px] text-slate-600 dark:text-slate-300">
+                        {label}
                         <span className="font-normal text-slate-400">
                           {" "}
                           {animationLabel(slot?.type)}
